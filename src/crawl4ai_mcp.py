@@ -1,44 +1,140 @@
 """
-MCP server for web crawling with Crawl4AI.
+FastMCP server for web crawling with Crawl4AI.
 
-This server provides tools to crawl websites using Crawl4AI, automatically detecting
-the appropriate crawl method based on URL type (sitemap, txt file, or regular webpage).
-Also includes AI hallucination detection and repository parsing tools using Neo4j knowledge graphs.
+This server implements the Model Context Protocol using FastMCP to provide tools
+for crawling websites with Crawl4AI, automatically detecting the appropriate crawl
+method based on URL type (sitemap, txt file, or regular webpage). Also includes
+AI hallucination detection and repository parsing tools using Neo4j knowledge graphs.
+
+Supports multiple transport modes: stdio (default for Claude Desktop), HTTP, and SSE.
 """
-from mcp.server.fastmcp import FastMCP, Context
-from sentence_transformers import CrossEncoder
-from contextlib import asynccontextmanager
-from collections.abc import AsyncIterator
-from dataclasses import dataclass
-from typing import List, Dict, Any, Optional, Union
-from urllib.parse import urlparse, urldefrag
-from xml.etree import ElementTree
-from dotenv import load_dotenv
-from supabase import Client
-from pathlib import Path
-import requests
-import asyncio
-import json
-import os
-import re
-import concurrent.futures
 import sys
-import time
+import traceback
+import logging
+from datetime import datetime
+import uuid
+import os
+import functools
 
-from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode, MemoryAdaptiveDispatcher
+# Configure structured logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] [%(name)s] %(message)s',
+    handlers=[logging.StreamHandler(sys.stderr)]
+)
+logger = logging.getLogger('crawl4ai-mcp')
+
+# Enable debug mode from environment
+if os.getenv('MCP_DEBUG', '').lower() in ('true', '1', 'yes'):
+    logger.setLevel(logging.DEBUG)
+    logger.debug("Debug mode enabled")
+
+class SuppressStdout:
+    """Context manager to suppress stdout during crawl operations"""
+    def __enter__(self):
+        self._stdout = sys.stdout
+        sys.stdout = sys.stderr
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        sys.stdout = self._stdout
+        return False
+
+class MCPToolError(Exception):
+    """Custom exception for MCP tool errors that should be returned as JSON-RPC errors"""
+    def __init__(self, message: str, code: int = -32000):
+        self.message = message
+        self.code = code
+        super().__init__(message)
+
+# Request tracking decorator
+def track_request(tool_name: str):
+    """Decorator to track MCP tool requests with timing and error handling"""
+    def decorator(func):
+        @functools.wraps(func)
+        async def wrapper(ctx: Context, *args, **kwargs):
+            request_id = str(uuid.uuid4())[:8]
+            start_time = datetime.now().timestamp()
+            
+            logger.info(f"[{request_id}] Starting {tool_name} request")
+            logger.debug(f"[{request_id}] Arguments: {kwargs}")
+            
+            try:
+                result = await func(ctx, *args, **kwargs)
+                duration = datetime.now().timestamp() - start_time
+                logger.info(f"[{request_id}] Completed {tool_name} in {duration:.2f}s")
+                return result
+            except Exception as e:
+                duration = datetime.now().timestamp() - start_time
+                logger.error(f"[{request_id}] Failed {tool_name} after {duration:.2f}s: {str(e)}")
+                logger.debug(f"[{request_id}] Traceback: {traceback.format_exc()}")
+                raise
+        
+        return wrapper
+    return decorator
+
+# Add early error logging
+try:
+    logger.info("Starting Crawl4AI MCP server...")
+    from fastmcp import FastMCP, Context
+except Exception as e:
+    logger.error(f"Error importing FastMCP: {e}")
+    logger.error(f"Traceback: {traceback.format_exc()}")
+    sys.exit(1)
+try:
+    logger.info("Importing dependencies...")
+    from sentence_transformers import CrossEncoder
+    from contextlib import asynccontextmanager
+    from collections.abc import AsyncIterator
+    from dataclasses import dataclass
+    from typing import List, Dict, Any, Optional, Union
+    from urllib.parse import urlparse, urldefrag
+    from xml.etree import ElementTree
+    from dotenv import load_dotenv
+    from database.base import VectorDatabase
+    from pathlib import Path
+    import requests
+    import asyncio
+    import json
+    import os
+    import re
+    import concurrent.futures
+    import time
+    logger.info("Basic imports successful")
+except Exception as e:
+    logger.error(f"Error importing dependencies: {e}")
+    logger.error(f"Traceback: {traceback.format_exc()}")
+    sys.exit(1)
+
+try:
+    logger.info("Importing Crawl4AI...")
+    from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode, MemoryAdaptiveDispatcher
+    logger.info("Crawl4AI imported successfully")
+except Exception as e:
+    logger.error(f"Error importing Crawl4AI: {e}")
+    logger.error(f"Traceback: {traceback.format_exc()}")
+    sys.exit(1)
 
 # Add knowledge_graphs folder to path for importing knowledge graph modules
 knowledge_graphs_path = Path(__file__).resolve().parent.parent / 'knowledge_graphs'
 sys.path.append(str(knowledge_graphs_path))
+logger.debug(f"Added knowledge_graphs path: {knowledge_graphs_path}")
 
-from utils import (
-    get_supabase_client, 
-    add_documents_to_supabase, 
+# Import database factory and utilities
+try:
+    logger.info("Importing database factory...")
+    from database.factory import create_and_initialize_database
+    logger.info("Database factory imported successfully")
+except Exception as e:
+    logger.error(f"Error importing database factory: {e}")
+    logger.error(f"Traceback: {traceback.format_exc()}")
+    sys.exit(1)
+from utils_refactored import (
+    add_documents_to_database,
     search_documents,
     extract_code_blocks,
     generate_code_example_summary,
-    add_code_examples_to_supabase,
-    update_source_info,
+    add_code_examples_to_database,
     extract_source_summary,
     search_code_examples
 )
@@ -51,10 +147,25 @@ from hallucination_reporter import HallucinationReporter
 
 # Load environment variables from the project root .env file
 project_root = Path(__file__).resolve().parent.parent
-dotenv_path = project_root / '.env'
+# Check if we should use .env.test instead
+if os.getenv('USE_TEST_ENV', '').lower() in ('true', '1', 'yes'):
+    dotenv_path = project_root / '.env.test'
+    logger.info(f"Using test environment: {dotenv_path}")
+else:
+    dotenv_path = project_root / '.env'
+logger.info(f"Loading .env from: {dotenv_path}")
+logger.debug(f".env exists: {dotenv_path.exists()}")
 
-# Force override of existing environment variables
-load_dotenv(dotenv_path, override=True)
+# Load environment variables from .env file
+# In test mode, use variables from .env.test as the master configuration
+if os.getenv('USE_TEST_ENV', '').lower() in ('true', '1', 'yes'):
+    # Test mode: .env.test values override everything
+    load_dotenv(dotenv_path, override=True)
+else:
+    # Normal mode: .env file values override environment
+    load_dotenv(dotenv_path, override=True)
+logger.info(f"VECTOR_DATABASE: {os.getenv('VECTOR_DATABASE')}")
+logger.debug(f"QDRANT_URL: {os.getenv('QDRANT_URL')}")
 
 # Helper functions for Neo4j validation and error handling
 def validate_neo4j_connection() -> bool:
@@ -118,7 +229,7 @@ def validate_github_url(repo_url: str) -> Dict[str, Any]:
 class Crawl4AIContext:
     """Context for the Crawl4AI MCP server."""
     crawler: AsyncWebCrawler
-    supabase_client: Client
+    database_client: VectorDatabase
     reranking_model: Optional[CrossEncoder] = None
     knowledge_validator: Optional[Any] = None  # KnowledgeGraphValidator when available
     repo_extractor: Optional[Any] = None       # DirectNeo4jExtractor when available
@@ -144,8 +255,8 @@ async def crawl4ai_lifespan(server: FastMCP) -> AsyncIterator[Crawl4AIContext]:
     crawler = AsyncWebCrawler(config=browser_config)
     await crawler.__aenter__()
     
-    # Initialize Supabase client
-    supabase_client = get_supabase_client()
+    # Initialize database client (Supabase or Qdrant based on config)
+    database_client = await create_and_initialize_database()
     
     # Initialize cross-encoder model for reranking if enabled
     reranking_model = None
@@ -153,7 +264,7 @@ async def crawl4ai_lifespan(server: FastMCP) -> AsyncIterator[Crawl4AIContext]:
         try:
             reranking_model = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
         except Exception as e:
-            print(f"Failed to load reranking model: {e}")
+            print(f"Failed to load reranking model: {e}", file=sys.stderr)
             reranking_model = None
     
     # Initialize Neo4j components if configured and enabled
@@ -170,31 +281,31 @@ async def crawl4ai_lifespan(server: FastMCP) -> AsyncIterator[Crawl4AIContext]:
         
         if neo4j_uri and neo4j_user and neo4j_password:
             try:
-                print("Initializing knowledge graph components...")
+                print("Initializing knowledge graph components...", file=sys.stderr)
                 
                 # Initialize knowledge graph validator
                 knowledge_validator = KnowledgeGraphValidator(neo4j_uri, neo4j_user, neo4j_password)
                 await knowledge_validator.initialize()
-                print("✓ Knowledge graph validator initialized")
+                print("✓ Knowledge graph validator initialized", file=sys.stderr)
                 
                 # Initialize repository extractor
                 repo_extractor = DirectNeo4jExtractor(neo4j_uri, neo4j_user, neo4j_password)
                 await repo_extractor.initialize()
-                print("✓ Repository extractor initialized")
+                print("✓ Repository extractor initialized", file=sys.stderr)
                 
             except Exception as e:
-                print(f"Failed to initialize Neo4j components: {format_neo4j_error(e)}")
+                print(f"Failed to initialize Neo4j components: {format_neo4j_error(e)}", file=sys.stderr)
                 knowledge_validator = None
                 repo_extractor = None
         else:
-            print("Neo4j credentials not configured - knowledge graph tools will be unavailable")
+            print("Neo4j credentials not configured - knowledge graph tools will be unavailable", file=sys.stderr)
     else:
-        print("Knowledge graph functionality disabled - set USE_KNOWLEDGE_GRAPH=true to enable")
+        print("Knowledge graph functionality disabled - set USE_KNOWLEDGE_GRAPH=true to enable", file=sys.stderr)
     
     try:
         yield Crawl4AIContext(
             crawler=crawler,
-            supabase_client=supabase_client,
+            database_client=database_client,
             reranking_model=reranking_model,
             knowledge_validator=knowledge_validator,
             repo_extractor=repo_extractor
@@ -205,24 +316,36 @@ async def crawl4ai_lifespan(server: FastMCP) -> AsyncIterator[Crawl4AIContext]:
         if knowledge_validator:
             try:
                 await knowledge_validator.close()
-                print("✓ Knowledge graph validator closed")
+                print("✓ Knowledge graph validator closed", file=sys.stderr)
             except Exception as e:
-                print(f"Error closing knowledge validator: {e}")
+                print(f"Error closing knowledge validator: {e}", file=sys.stderr)
         if repo_extractor:
             try:
                 await repo_extractor.close()
-                print("✓ Repository extractor closed")
+                print("✓ Repository extractor closed", file=sys.stderr)
             except Exception as e:
-                print(f"Error closing repository extractor: {e}")
+                print(f"Error closing repository extractor: {e}", file=sys.stderr)
 
-# Initialize FastMCP server
-mcp = FastMCP(
-    "mcp-crawl4ai-rag",
-    description="MCP server for RAG and web crawling with Crawl4AI",
-    lifespan=crawl4ai_lifespan,
-    host=os.getenv("HOST", "0.0.0.0"),
-    port=os.getenv("PORT", "8051")
-)
+# Initialize FastMCP server with lifespan management
+try:
+    print("Initializing FastMCP server...", file=sys.stderr)
+    # Get host and port for HTTP transport (not used for stdio)
+    host = os.getenv("HOST", "0.0.0.0")
+    port = os.getenv("PORT", "8051")
+    # Ensure port has a valid default even if empty string
+    if not port:
+        port = "8051"
+    print(f"Host: {host}, Port: {port}", file=sys.stderr)
+    
+    mcp = FastMCP(
+        "mcp-crawl4ai-rag",
+        lifespan=crawl4ai_lifespan
+    )
+    print("FastMCP server initialized successfully", file=sys.stderr)
+except Exception as e:
+    print(f"Error initializing FastMCP server: {e}", file=sys.stderr)
+    logger.error(f"Traceback: {traceback.format_exc()}")
+    sys.exit(1)
 
 def rerank_results(model: CrossEncoder, query: str, results: List[Dict[str, Any]], content_key: str = "content") -> List[Dict[str, Any]]:
     """
@@ -259,7 +382,7 @@ def rerank_results(model: CrossEncoder, query: str, results: List[Dict[str, Any]
         
         return reranked
     except Exception as e:
-        print(f"Error during reranking: {e}")
+        logger.error(f"Error during reranking: {e}")
         return results
 
 def is_sitemap(url: str) -> bool:
@@ -304,7 +427,7 @@ def parse_sitemap(sitemap_url: str) -> List[str]:
             tree = ElementTree.fromstring(resp.content)
             urls = [loc.text for loc in tree.findall('.//{*}loc')]
         except Exception as e:
-            print(f"Error parsing sitemap XML: {e}")
+            logger.error(f"Error parsing sitemap XML: {e}")
 
     return urls
 
@@ -387,6 +510,7 @@ def process_code_example(args):
     return generate_code_example_summary(code, context_before, context_after)
 
 @mcp.tool()
+@track_request("search")
 async def search(ctx: Context, query: str, return_raw_markdown: bool = False, num_results: int = 6, batch_size: int = 20, max_concurrent: int = 10) -> str:
     """
     Comprehensive search tool that integrates SearXNG search with scraping and RAG functionality.
@@ -430,7 +554,9 @@ async def search(ctx: Context, query: str, return_raw_markdown: bool = False, nu
         # Step 2: SearXNG request - make HTTP GET request with parameters
         headers = {
             "User-Agent": user_agent,
-            "Accept": "application/json"
+            "Accept": "text/html,application/json;q=0.9,*/*;q=0.8",
+            "Accept-Encoding": "gzip, deflate",
+            "Accept-Language": "en-US,en;q=0.5"
         }
         
         # Prepare request parameters
@@ -445,8 +571,8 @@ async def search(ctx: Context, query: str, return_raw_markdown: bool = False, nu
         if default_engines:
             params["engines"] = default_engines
         
-        print(f"Making SearXNG request to: {search_endpoint}")
-        print(f"Parameters: {params}")
+        logger.debug(f"Making SearXNG request to: {search_endpoint}")
+        logger.debug(f"Parameters: {params}")
         
         # Make the HTTP request to SearXNG
         try:
@@ -511,7 +637,7 @@ async def search(ctx: Context, query: str, return_raw_markdown: bool = False, nu
                 "error": "No valid URLs found in search results"
             }, indent=2)
         
-        print(f"Found {len(valid_urls)} valid URLs to process")
+        logger.info(f"Found {len(valid_urls)} valid URLs to process")
         
         # Step 5: Content processing - use existing scrape_urls function
         try:
@@ -542,19 +668,16 @@ async def search(ctx: Context, query: str, return_raw_markdown: bool = False, nu
         if return_raw_markdown:
             # Raw markdown mode - just return scraped content without RAG
             # Get content from database for each URL
-            supabase_client = ctx.request_context.lifespan_context.supabase_client
+            database_client = ctx.request_context.lifespan_context.database_client
             
             for url in valid_urls:
                 try:
                     # Query the database for content from this URL
-                    result = supabase_client.from_('crawled_pages')\
-                        .select('content')\
-                        .eq('url', url)\
-                        .execute()
+                    documents = await database_client.get_documents_by_url(url)
                     
-                    if result.data:
+                    if documents:
                         # Combine all chunks for this URL
-                        content_chunks = [row['content'] for row in result.data]
+                        content_chunks = [doc['content'] for doc in documents]
                         combined_content = '\n\n'.join(content_chunks)
                         results_data[url] = combined_content
                         processed_urls += 1
@@ -627,6 +750,7 @@ async def search(ctx: Context, query: str, return_raw_markdown: bool = False, nu
         }, indent=2)
 
 @mcp.tool()
+@track_request("scrape_urls")
 async def scrape_urls(ctx: Context, url: Union[str, List[str]], max_concurrent: int = 10, batch_size: int = 20, return_raw_markdown: bool = False) -> str:
     """
     Scrape **one or more URLs** and store their contents as embedding chunks in Supabase.
@@ -691,11 +815,11 @@ async def scrape_urls(ctx: Context, url: Union[str, List[str]], max_concurrent: 
         
         # Get context components
         crawler = ctx.request_context.lifespan_context.crawler
-        supabase_client = ctx.request_context.lifespan_context.supabase_client
+        database_client = ctx.request_context.lifespan_context.database_client
         
         # Always use unified processing (handles both single and multiple URLs seamlessly)
         return await _process_multiple_urls(
-            crawler, supabase_client, urls_to_process,
+            crawler, database_client, urls_to_process,
             max_concurrent, batch_size, start_time, return_raw_markdown
         )
             
@@ -711,7 +835,7 @@ async def scrape_urls(ctx: Context, url: Union[str, List[str]], max_concurrent: 
 
 async def _process_multiple_urls(
     crawler: AsyncWebCrawler,
-    supabase_client: Client,
+    database_client: VectorDatabase,
     urls: List[str],
     max_concurrent: int,
     batch_size: int,
@@ -727,7 +851,7 @@ async def _process_multiple_urls(
     
     Args:
         crawler: AsyncWebCrawler instance
-        supabase_client: Supabase client
+        database_client: Database client
         urls: List of URLs to process (can be single URL or multiple)
         max_concurrent: Maximum concurrent browser sessions
         batch_size: Batch size for database operations
@@ -897,12 +1021,12 @@ async def _process_multiple_urls(
             
             for (source_id, _), summary in zip(source_summary_args, source_summaries):
                 word_count = source_word_counts.get(source_id, 0)
-                update_source_info(supabase_client, source_id, summary, word_count)
+                await database_client.update_source_info( source_id, summary, word_count)
         
         # Add documentation chunks to Supabase in batches (if any)
         if all_contents:
-            add_documents_to_supabase(
-                supabase_client,
+            await add_documents_to_database(
+                database_client,
                 all_urls,
                 all_chunk_numbers,
                 all_contents,
@@ -956,8 +1080,8 @@ async def _process_multiple_urls(
             
             # Add all code examples to Supabase
             if code_examples:
-                add_code_examples_to_supabase(
-                    supabase_client,
+                await add_code_examples_to_database(
+                    database_client,
                     code_urls,
                     code_chunk_numbers,
                     code_examples,
@@ -1050,6 +1174,7 @@ async def _process_multiple_urls(
             }, indent=2)
 
 @mcp.tool()
+@track_request("smart_crawl_url")
 async def smart_crawl_url(ctx: Context, url: str, max_depth: int = 3, max_concurrent: int = 10, chunk_size: int = 5000, return_raw_markdown: bool = False, query: List[str] = None) -> str:
     """
     Intelligently crawl a URL based on its type and store content in Supabase.
@@ -1076,7 +1201,7 @@ async def smart_crawl_url(ctx: Context, url: str, max_depth: int = 3, max_concur
     try:
         # Get the crawler from the context
         crawler = ctx.request_context.lifespan_context.crawler
-        supabase_client = ctx.request_context.lifespan_context.supabase_client
+        database_client = ctx.request_context.lifespan_context.database_client
         
         # Determine the crawl strategy
         crawl_results = []
@@ -1186,11 +1311,11 @@ async def smart_crawl_url(ctx: Context, url: str, max_depth: int = 3, max_concur
         
         for (source_id, _), summary in zip(source_summary_args, source_summaries):
             word_count = source_word_counts.get(source_id, 0)
-            update_source_info(supabase_client, source_id, summary, word_count)
+            await database_client.update_source_info( source_id, summary, word_count)
         
         # Add documentation chunks to Supabase (AFTER sources exist)
         batch_size = 20
-        add_documents_to_supabase(supabase_client, urls, chunk_numbers, contents, metadatas, url_to_full_document, batch_size=batch_size)
+        await add_documents_to_database(database_client, urls, chunk_numbers, contents, metadatas, url_to_full_document, batch_size=batch_size)
         
         # Extract and process code examples from all documents only if enabled
         code_examples = []
@@ -1240,8 +1365,8 @@ async def smart_crawl_url(ctx: Context, url: str, max_depth: int = 3, max_concur
             
             # Add all code examples to Supabase
             if code_examples:
-                add_code_examples_to_supabase(
-                    supabase_client,
+                await add_code_examples_to_database(
+                    database_client,
                     code_urls,
                     code_chunk_numbers,
                     code_examples,
@@ -1318,6 +1443,7 @@ async def smart_crawl_url(ctx: Context, url: str, max_depth: int = 3, max_concur
         }, indent=2)
 
 @mcp.tool()
+@track_request("get_available_sources")
 async def get_available_sources(ctx: Context) -> str:
     """
     Get all available sources from the sources table.
@@ -1337,18 +1463,15 @@ async def get_available_sources(ctx: Context) -> str:
     """
     try:
         # Get the Supabase client from the context
-        supabase_client = ctx.request_context.lifespan_context.supabase_client
+        database_client = ctx.request_context.lifespan_context.database_client
         
-        # Query the sources table directly
-        result = supabase_client.from_('sources')\
-            .select('*')\
-            .order('source_id')\
-            .execute()
+        # Query the sources table
+        source_data = await database_client.get_sources()
         
         # Format the sources with their details
         sources = []
-        if result.data:
-            for source in result.data:
+        if source_data:
+            for source in source_data:
                 sources.append({
                     "source_id": source.get("source_id"),
                     "summary": source.get("summary"),
@@ -1369,6 +1492,7 @@ async def get_available_sources(ctx: Context) -> str:
         }, indent=2)
 
 @mcp.tool()
+@track_request("perform_rag_query")
 async def perform_rag_query(ctx: Context, query: str, source: str = None, match_count: int = 5) -> str:
     """
     Perform a RAG (Retrieval Augmented Generation) query on the stored content.
@@ -1387,7 +1511,7 @@ async def perform_rag_query(ctx: Context, query: str, source: str = None, match_
     """
     try:
         # Get the Supabase client from the context
-        supabase_client = ctx.request_context.lifespan_context.supabase_client
+        database_client = ctx.request_context.lifespan_context.database_client
         
         # Check if hybrid search is enabled
         use_hybrid_search = os.getenv("USE_HYBRID_SEARCH", "false") == "true"
@@ -1401,25 +1525,19 @@ async def perform_rag_query(ctx: Context, query: str, source: str = None, match_
             # Hybrid search: combine vector and keyword search
             
             # 1. Get vector search results (get more to account for filtering)
-            vector_results = search_documents(
-                client=supabase_client,
+            vector_results = await search_documents(
+                database=database_client,
                 query=query,
                 match_count=match_count * 2,  # Get double to have room for filtering
                 filter_metadata=filter_metadata
             )
             
-            # 2. Get keyword search results using ILIKE
-            keyword_query = supabase_client.from_('crawled_pages')\
-                .select('id, url, chunk_number, content, metadata, source_id')\
-                .ilike('content', f'%{query}%')
-            
-            # Apply source filter if provided
-            if source and source.strip():
-                keyword_query = keyword_query.eq('source_id', source)
-            
-            # Execute keyword search
-            keyword_response = keyword_query.limit(match_count * 2).execute()
-            keyword_results = keyword_response.data if keyword_response.data else []
+            # 2. Get keyword search results
+            keyword_results = await database_client.search_documents_by_keyword(
+                keyword=query,
+                match_count=match_count * 2,
+                source_filter=source if source and source.strip() else None
+            )
             
             # 3. Combine results with preference for items appearing in both
             seen_ids = set()
@@ -1464,8 +1582,8 @@ async def perform_rag_query(ctx: Context, query: str, source: str = None, match_
             
         else:
             # Standard vector search only
-            results = search_documents(
-                client=supabase_client,
+            results = await search_documents(
+                database=database_client,
                 query=query,
                 match_count=match_count,
                 filter_metadata=filter_metadata
@@ -1507,6 +1625,7 @@ async def perform_rag_query(ctx: Context, query: str, source: str = None, match_
         }, indent=2)
 
 @mcp.tool()
+@track_request("search_code_examples")
 async def search_code_examples(ctx: Context, query: str, source_id: str = None, match_count: int = 5) -> str:
     """
     Search for code examples relevant to the query.
@@ -1535,7 +1654,7 @@ async def search_code_examples(ctx: Context, query: str, source_id: str = None, 
     
     try:
         # Get the Supabase client from the context
-        supabase_client = ctx.request_context.lifespan_context.supabase_client
+        database_client = ctx.request_context.lifespan_context.database_client
         
         # Check if hybrid search is enabled
         use_hybrid_search = os.getenv("USE_HYBRID_SEARCH", "false") == "true"
@@ -1553,24 +1672,18 @@ async def search_code_examples(ctx: Context, query: str, source_id: str = None, 
             
             # 1. Get vector search results (get more to account for filtering)
             vector_results = search_code_examples_impl(
-                client=supabase_client,
+                client=database_client,
                 query=query,
                 match_count=match_count * 2,  # Get double to have room for filtering
                 filter_metadata=filter_metadata
             )
             
-            # 2. Get keyword search results using ILIKE on both content and summary
-            keyword_query = supabase_client.from_('code_examples')\
-                .select('id, url, chunk_number, content, summary, metadata, source_id')\
-                .or_(f'content.ilike.%{query}%,summary.ilike.%{query}%')
-            
-            # Apply source filter if provided
-            if source_id and source_id.strip():
-                keyword_query = keyword_query.eq('source_id', source_id)
-            
-            # Execute keyword search
-            keyword_response = keyword_query.limit(match_count * 2).execute()
-            keyword_results = keyword_response.data if keyword_response.data else []
+            # 2. Get keyword search results on both content and summary
+            keyword_results = await database_client.search_code_examples_by_keyword(
+                keyword=query,
+                match_count=match_count * 2,
+                source_filter=source_id if source_id and source_id.strip() else None
+            )
             
             # 3. Combine results with preference for items appearing in both
             seen_ids = set()
@@ -1619,7 +1732,7 @@ async def search_code_examples(ctx: Context, query: str, source_id: str = None, 
             from utils import search_code_examples as search_code_examples_impl
             
             results = search_code_examples_impl(
-                client=supabase_client,
+                client=database_client,
                 query=query,
                 match_count=match_count,
                 filter_metadata=filter_metadata
@@ -1663,6 +1776,7 @@ async def search_code_examples(ctx: Context, query: str, source_id: str = None, 
         }, indent=2)
 
 @mcp.tool()
+@track_request("check_ai_script_hallucinations")
 async def check_ai_script_hallucinations(ctx: Context, script_path: str) -> str:
     """
     Check an AI-generated Python script for hallucinations using the knowledge graph.
@@ -1716,7 +1830,7 @@ async def check_ai_script_hallucinations(ctx: Context, script_path: str) -> str:
         analysis_result = analyzer.analyze_script(script_path)
         
         if analysis_result.errors:
-            print(f"Analysis warnings for {script_path}: {analysis_result.errors}")
+            logger.warning(f"Analysis warnings for {script_path}: {analysis_result.errors}")
         
         # Step 2: Validate against knowledge graph
         validation_result = await knowledge_validator.validate_script(analysis_result)
@@ -1758,6 +1872,7 @@ async def check_ai_script_hallucinations(ctx: Context, script_path: str) -> str:
         }, indent=2)
 
 @mcp.tool()
+@track_request("query_knowledge_graph")
 async def query_knowledge_graph(ctx: Context, command: str) -> str:
     """
     Query and explore the Neo4j knowledge graph containing repository data.
@@ -2212,6 +2327,7 @@ async def _handle_query_command(session, command: str, cypher_query: str) -> str
 
 
 @mcp.tool()
+@track_request("parse_github_repository")
 async def parse_github_repository(ctx: Context, repo_url: str) -> str:
     """
     Parse a GitHub repository into the Neo4j knowledge graph.
@@ -2262,9 +2378,9 @@ async def parse_github_repository(ctx: Context, repo_url: str) -> str:
         repo_name = validation["repo_name"]
         
         # Parse the repository (this includes cloning, analysis, and Neo4j storage)
-        print(f"Starting repository analysis for: {repo_name}")
+        logger.info(f"Starting repository analysis for: {repo_name}")
         await repo_extractor.analyze_repository(repo_url)
-        print(f"Repository analysis completed for: {repo_name}")
+        logger.info(f"Repository analysis completed for: {repo_name}")
         
         # Query Neo4j for statistics about the parsed repository
         async with repo_extractor.driver.session() as session:
@@ -2352,11 +2468,12 @@ async def crawl_markdown_file(crawler: AsyncWebCrawler, url: str) -> List[Dict[s
     """
     crawl_config = CrawlerRunConfig()
 
-    result = await crawler.arun(url=url, config=crawl_config)
+    with SuppressStdout():
+        result = await crawler.arun(url=url, config=crawl_config)
     if result.success and result.markdown:
         return [{'url': url, 'markdown': result.markdown}]
     else:
-        print(f"Failed to crawl {url}: {result.error_message}")
+        logger.error(f"Failed to crawl {url}: {result.error_message}")
         return []
 
 async def crawl_batch(crawler: AsyncWebCrawler, urls: List[str], max_concurrent: int = 10) -> List[Dict[str, Any]]:
@@ -2378,7 +2495,8 @@ async def crawl_batch(crawler: AsyncWebCrawler, urls: List[str], max_concurrent:
         max_session_permit=max_concurrent
     )
 
-    results = await crawler.arun_many(urls=urls, config=crawl_config, dispatcher=dispatcher)
+    with SuppressStdout():
+        results = await crawler.arun_many(urls=urls, config=crawl_config, dispatcher=dispatcher)
     return [{'url': r.url, 'markdown': r.markdown, 'links': r.links} for r in results if r.success and r.markdown]
 
 async def crawl_recursive_internal_links(crawler: AsyncWebCrawler, start_urls: List[str], max_depth: int = 3, max_concurrent: int = 10) -> List[Dict[str, Any]]:
@@ -2414,7 +2532,8 @@ async def crawl_recursive_internal_links(crawler: AsyncWebCrawler, start_urls: L
         if not urls_to_crawl:
             break
 
-        results = await crawler.arun_many(urls=urls_to_crawl, config=run_config, dispatcher=dispatcher)
+        with SuppressStdout():
+            results = await crawler.arun_many(urls=urls_to_crawl, config=run_config, dispatcher=dispatcher)
         next_level_urls = set()
 
         for result in results:
@@ -2433,13 +2552,34 @@ async def crawl_recursive_internal_links(crawler: AsyncWebCrawler, start_urls: L
     return results_all
 
 async def main():
-    transport = os.getenv("TRANSPORT", "sse")
-    if transport == 'sse':
-        # Run the MCP server with sse transport
-        await mcp.run_sse_async()
-    else:
-        # Run the MCP server with stdio transport
-        await mcp.run_stdio_async()
+    """Main function to run the MCP server with appropriate transport."""
+    try:
+        logger.info("Main function started")
+        transport = os.getenv("TRANSPORT", "http").lower()
+        logger.info(f"Transport mode: {transport}")
+        
+        # Flush output before starting server
+        sys.stdout.flush()
+        sys.stderr.flush()
+        
+        # Run server with appropriate transport
+        if transport == 'http':
+            await mcp.run_async(transport="http", host=host, port=int(port))
+        elif transport == 'sse':
+            await mcp.run_sse_async()
+        else:  # Default to stdio for Claude Desktop compatibility
+            await mcp.run_stdio_async()
+            
+    except Exception as e:
+        logger.error(f"Error in main function: {e}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        raise
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        logger.info("Starting main function...")
+        asyncio.run(main())
+    except Exception as e:
+        logger.error(f"Error in main: {e}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        sys.exit(1)
