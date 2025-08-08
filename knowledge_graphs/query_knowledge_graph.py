@@ -25,12 +25,24 @@ class KnowledgeGraphQuerier:
     
     async def initialize(self):
         """Initialize Neo4j connection"""
-        self.driver = AsyncGraphDatabase.driver(
-            self.neo4j_uri, 
-            auth=(self.neo4j_user, self.neo4j_password)
-        )
-        print("🔗 Connected to Neo4j knowledge graph")
-    
+        # Import notification suppression (available in neo4j>=5.21.0)
+        try:
+            from neo4j import NotificationMinimumSeverity
+            # Create Neo4j driver with notification suppression
+            self.driver = AsyncGraphDatabase.driver(
+                self.neo4j_uri, 
+                auth=(self.neo4j_user, self.neo4j_password),
+                warn_notification_severity=NotificationMinimumSeverity.OFF
+            )
+        except (ImportError, AttributeError):
+            # Fallback for older versions - use logging suppression
+            import logging
+            logging.getLogger('neo4j.notifications').setLevel(logging.ERROR)
+            self.driver = AsyncGraphDatabase.driver(
+                self.neo4j_uri, 
+                auth=(self.neo4j_user, self.neo4j_password)
+            )
+        print("🔗 Connected to Neo4j knowledge graph")    
     async def close(self):
         """Close Neo4j connection"""
         if self.driver:
@@ -362,7 +374,7 @@ async def main():
     # Load environment
     load_dotenv()
     neo4j_uri = os.environ.get('NEO4J_URI', 'bolt://localhost:7687')
-    neo4j_user = os.environ.get('NEO4J_USER', 'neo4j')
+    neo4j_user = os.environ.get('NEO4J_USERNAME', 'neo4j')
     neo4j_password = os.environ.get('NEO4J_PASSWORD', 'password')
     
     querier = KnowledgeGraphQuerier(neo4j_uri, neo4j_user, neo4j_password)
