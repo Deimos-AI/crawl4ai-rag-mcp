@@ -68,11 +68,12 @@ class GitRepositoryManager:
 
         # Execute clone command
         try:
-            result = await self._run_git_command(cmd)
+            await self._run_git_command(cmd)
             self.logger.info(f"Repository cloned successfully to {target_dir}")
             return target_dir
         except Exception as e:
-            raise RuntimeError(f"Failed to clone repository: {e}")
+            msg = f"Failed to clone repository: {e}"
+            raise RuntimeError(msg)
 
     async def update_repository(self, repo_dir: str, branch: str | None = None) -> dict:
         """
@@ -143,7 +144,7 @@ class GitRepositoryManager:
                             "name": parts[0].replace("origin/", ""),
                             "last_commit_date": parts[1],
                             "last_commit_message": parts[2],
-                        }
+                        },
                     )
 
         return branches
@@ -176,7 +177,7 @@ class GitRepositoryManager:
                             "name": parts[0],
                             "date": parts[1] if len(parts) > 1 else "",
                             "message": parts[2] if len(parts) > 2 else "",
-                        }
+                        },
                     )
 
         return tags
@@ -224,7 +225,7 @@ class GitRepositoryManager:
                             "timestamp": int(parts[3]),
                             "date": datetime.fromtimestamp(int(parts[3])).isoformat(),
                             "message": parts[4],
-                        }
+                        },
                     )
 
         return commits
@@ -270,7 +271,7 @@ class GitRepositoryManager:
                             "timestamp": int(parts[2]),
                             "date": datetime.fromtimestamp(int(parts[2])).isoformat(),
                             "message": parts[3],
-                        }
+                        },
                     )
 
         return history
@@ -364,7 +365,7 @@ class GitRepositoryManager:
             authors = (
                 (await self._run_git_command(cmd, cwd=repo_dir)).strip().split("\n")
             )
-            info["contributor_count"] = len(set([a for a in authors if a]))
+            info["contributor_count"] = len({a for a in authors if a})
         except:
             info["contributor_count"] = 0
 
@@ -423,7 +424,7 @@ class GitRepositoryManager:
                         {
                             "status": status_map.get(parts[0][0], "unknown"),
                             "file": parts[1],
-                        }
+                        },
                     )
 
         return changed_files
@@ -457,11 +458,12 @@ class GitRepositoryManager:
 
             if process.returncode != 0:
                 error_msg = stderr.decode("utf-8") if stderr else "Unknown error"
-                raise RuntimeError(f"Git command failed: {error_msg}")
+                msg = f"Git command failed: {error_msg}"
+                raise RuntimeError(msg)
 
             return stdout.decode("utf-8")
         except Exception as e:
-            self.logger.error(f"Error running git command {' '.join(cmd)}: {e}")
+            self.logger.exception(f"Error running git command {' '.join(cmd)}: {e}")
             raise
 
     async def _remove_directory(self, path: str) -> None:

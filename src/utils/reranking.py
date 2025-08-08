@@ -43,9 +43,8 @@ def rerank_results(
             result["rerank_score"] = float(scores[i])
 
         # Sort by rerank score
-        reranked = sorted(results, key=lambda x: x.get("rerank_score", 0), reverse=True)
+        return sorted(results, key=lambda x: x.get("rerank_score", 0), reverse=True)
 
-        return reranked
     except Exception as e:
         logger.error(f"Error during reranking: {e}")
         return results

@@ -44,7 +44,7 @@ class Settings:
         # Validate OpenAI API key
         if not self.openai_api_key:
             logger.error(
-                "OPENAI_API_KEY is missing or empty. Please check your .env file."
+                "OPENAI_API_KEY is missing or empty. Please check your .env file.",
             )
 
         # Log current database configuration
@@ -162,7 +162,7 @@ class Settings:
                 self.neo4j_uri,
                 self.neo4j_username,
                 self.neo4j_password,
-            ]
+            ],
         )
 
     def get_neo4j_config(self) -> dict[str, str]:

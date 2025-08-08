@@ -129,7 +129,7 @@ async def query_knowledge_graph(command: str) -> str:
             )
 
     except Exception as e:
-        logger.error(f"Error in query_knowledge_graph: {e}")
+        logger.exception(f"Error in query_knowledge_graph: {e}")
         return json.dumps(
             {
                 "success": False,

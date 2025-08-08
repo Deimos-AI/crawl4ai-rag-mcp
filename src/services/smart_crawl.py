@@ -121,8 +121,9 @@ async def smart_crawl_url(
         )
 
     except Exception as e:
-        logger.error(f"Error in smart_crawl_url: {e}")
-        raise MCPToolError(f"Smart crawl failed: {e!s}")
+        logger.exception(f"Error in smart_crawl_url: {e}")
+        msg = f"Smart crawl failed: {e!s}"
+        raise MCPToolError(msg)
 
 
 async def _crawl_sitemap(
@@ -139,8 +140,9 @@ async def _crawl_sitemap(
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as response:
                 if response.status != 200:
+                    msg = f"Failed to fetch sitemap: HTTP {response.status}"
                     raise MCPToolError(
-                        f"Failed to fetch sitemap: HTTP {response.status}"
+                        msg,
                     )
                 content = await response.text()
 
@@ -153,7 +155,7 @@ async def _crawl_sitemap(
                     "type": "sitemap",
                     "message": "No URLs found in sitemap",
                     "url": url,
-                }
+                },
             )
 
         logger.info(f"Found {len(urls)} URLs in sitemap")
@@ -179,24 +181,24 @@ async def _crawl_sitemap(
             for q in query:
                 try:
                     rag_result = await _perform_rag_query_with_context(
-                        ctx, q, source=None, match_count=5
+                        ctx, q, source=None, match_count=5,
                     )
                     data["query_results"][q] = json.loads(rag_result)
                 except Exception as e:
-                    logger.error(f"RAG query failed for '{q}': {e}")
+                    logger.exception(f"RAG query failed for '{q}': {e}")
                     data["query_results"][q] = {"error": str(e)}
 
         return json.dumps(data)
 
     except Exception as e:
-        logger.error(f"Sitemap crawl error: {e}")
+        logger.exception(f"Sitemap crawl error: {e}")
         return json.dumps(
             {
                 "success": False,
                 "type": "sitemap",
                 "error": str(e),
                 "url": url,
-            }
+            },
         )
 
 
@@ -222,14 +224,14 @@ async def _crawl_text_file(
         return json.dumps(data)
 
     except Exception as e:
-        logger.error(f"Text file crawl error: {e}")
+        logger.exception(f"Text file crawl error: {e}")
         return json.dumps(
             {
                 "success": False,
                 "type": "text_file",
                 "error": str(e),
                 "url": url,
-            }
+            },
         )
 
 
@@ -250,7 +252,8 @@ async def _crawl_recursive(
         app_ctx = get_app_context()
 
         if not app_ctx or not hasattr(app_ctx, "crawler"):
-            raise MCPToolError("Crawler not available in application context")
+            msg = "Crawler not available in application context"
+            raise MCPToolError(msg)
 
         # Call crawl_recursive_internal_links with correct parameters
         crawl_results = await crawl_recursive_internal_links(
@@ -267,7 +270,7 @@ async def _crawl_recursive(
                 [
                     f"# {result.get('url', 'Unknown URL')}\n\n{result.get('markdown', '')}"
                     for result in crawl_results
-                ]
+                ],
             )
             return json.dumps(
                 {
@@ -275,13 +278,14 @@ async def _crawl_recursive(
                     "type": "recursive",
                     "raw_markdown": markdown_content,
                     "urls_crawled": len(crawl_results),
-                }
+                },
             )
 
         # Store results in database if not returning raw
         app_ctx = get_app_context()
         if not app_ctx or not app_ctx.database_client:
-            raise MCPToolError("Database client not available in application context")
+            msg = "Database client not available in application context"
+            raise MCPToolError(msg)
         db_client = app_ctx.database_client
 
         stored_count = 0
@@ -295,7 +299,7 @@ async def _crawl_recursive(
                     )
                     stored_count += 1
                 except Exception as e:
-                    logger.error(f"Failed to store {result['url']}: {e}")
+                    logger.exception(f"Failed to store {result['url']}: {e}")
 
         # Create response data
         data = {
@@ -312,22 +316,22 @@ async def _crawl_recursive(
             for q in query:
                 try:
                     rag_result = await _perform_rag_query_with_context(
-                        ctx, q, source=None, match_count=5
+                        ctx, q, source=None, match_count=5,
                     )
                     data["query_results"][q] = json.loads(rag_result)
                 except Exception as e:
-                    logger.error(f"RAG query failed for '{q}': {e}")
+                    logger.exception(f"RAG query failed for '{q}': {e}")
                     data["query_results"][q] = {"error": str(e)}
 
         return json.dumps(data)
 
     except Exception as e:
-        logger.error(f"Recursive crawl error: {e}")
+        logger.exception(f"Recursive crawl error: {e}")
         return json.dumps(
             {
                 "success": False,
                 "type": "recursive",
                 "error": str(e),
                 "url": url,
-            }
+            },
         )

@@ -120,7 +120,7 @@ async def parse_github_repository(repo_extractor: Any, repo_url: str) -> str:
         # 2. Analyzing Python files to extract code structure
         # 3. Storing classes, methods, functions, and imports in Neo4j
         # 4. Cleaning up temporary files
-        result = await repo_extractor.analyze_repository(repo_url)
+        await repo_extractor.analyze_repository(repo_url)
 
         # Query Neo4j to get statistics about what was stored
         stats_query = """
@@ -134,7 +134,7 @@ async def parse_github_repository(repo_extractor: Any, repo_url: str) -> str:
              COLLECT(DISTINCT c) as classes,
              COLLECT(DISTINCT m) as methods,
              COLLECT(DISTINCT func) as functions
-        RETURN 
+        RETURN
             SIZE([f IN files WHERE f IS NOT NULL]) as file_count,
             SIZE([c IN classes WHERE c IS NOT NULL]) as class_count,
             SIZE([m IN methods WHERE m IS NOT NULL]) as method_count,
@@ -167,7 +167,7 @@ async def parse_github_repository(repo_extractor: Any, repo_url: str) -> str:
         )
 
     except Exception as e:
-        logger.error(f"Error parsing repository {repo_url}: {e}")
+        logger.exception(f"Error parsing repository {repo_url}: {e}")
         return json.dumps(
             {
                 "success": False,
@@ -192,7 +192,7 @@ async def parse_github_repository_with_branch(
             {
                 "error": "Application context not available",
                 "details": "The application is not properly initialized",
-            }
+            },
         )
 
     repo_extractor = getattr(app_ctx, "repo_extractor", None)
@@ -203,7 +203,7 @@ async def parse_github_repository_with_branch(
             {
                 "error": "Knowledge graph functionality is not enabled",
                 "details": "Set USE_KNOWLEDGE_GRAPH=true and configure Neo4j credentials",
-            }
+            },
         )
 
     try:
@@ -214,7 +214,7 @@ async def parse_github_repository_with_branch(
                 {
                     "error": "Invalid GitHub URL",
                     "details": validation,
-                }
+                },
             )
 
         # Extract repository name
@@ -240,7 +240,7 @@ async def parse_github_repository_with_branch(
              COLLECT(DISTINCT func) as functions,
              COLLECT(DISTINCT b) as branches,
              COLLECT(DISTINCT commit) as commits
-        RETURN 
+        RETURN
             r.remote_url as remote_url,
             r.current_branch as current_branch,
             r.file_count as total_files,
@@ -278,22 +278,22 @@ async def parse_github_repository_with_branch(
                             "repository_size": stats["repo_size"] or "unknown",
                         },
                         "message": f"Successfully parsed {repo_name} branch {branch} into knowledge graph",
-                    }
+                    },
                 )
             return json.dumps(
                 {
                     "status": "error",
                     "message": "Failed to retrieve statistics after parsing",
-                }
+                },
             )
 
     except Exception as e:
-        logger.error(f"Error parsing repository branch: {e}")
+        logger.exception(f"Error parsing repository branch: {e}")
         return json.dumps(
             {
                 "error": "Failed to parse repository branch",
                 "details": str(e),
-            }
+            },
         )
 
 
@@ -307,7 +307,7 @@ async def get_repository_metadata_from_neo4j(ctx: Context, repo_name: str) -> st
             {
                 "error": "Application context not available",
                 "details": "The application is not properly initialized",
-            }
+            },
         )
 
     repo_extractor = getattr(app_ctx, "repo_extractor", None)
@@ -316,7 +316,7 @@ async def get_repository_metadata_from_neo4j(ctx: Context, repo_name: str) -> st
         return json.dumps(
             {
                 "error": "Knowledge graph functionality is not enabled",
-            }
+            },
         )
 
     try:
@@ -333,7 +333,7 @@ async def get_repository_metadata_from_neo4j(ctx: Context, repo_name: str) -> st
                 return json.dumps(
                     {
                         "error": f"Repository {repo_name} not found in knowledge graph",
-                    }
+                    },
                 )
 
             repo_data = dict(repo_node["r"])
@@ -341,8 +341,8 @@ async def get_repository_metadata_from_neo4j(ctx: Context, repo_name: str) -> st
             # Get branches - fix missing property warnings with COALESCE
             branches_query = """
             MATCH (r:Repository {name: $repo_name})-[:HAS_BRANCH]->(b:Branch)
-            RETURN b.name as name, 
-                   COALESCE(b.last_commit_date, '') as last_commit_date, 
+            RETURN b.name as name,
+                   COALESCE(b.last_commit_date, '') as last_commit_date,
                    COALESCE(b.last_commit_message, '') as last_commit_message
             LIMIT 20
             """
@@ -352,9 +352,9 @@ async def get_repository_metadata_from_neo4j(ctx: Context, repo_name: str) -> st
             # Get recent commits - fix missing property warnings with COALESCE
             commits_query = """
             MATCH (r:Repository {name: $repo_name})-[:HAS_COMMIT]->(c:Commit)
-            RETURN COALESCE(c.hash, '') as hash, 
-                   COALESCE(c.author_name, '') as author, 
-                   COALESCE(c.date, '') as date, 
+            RETURN COALESCE(c.hash, '') as hash,
+                   COALESCE(c.author_name, '') as author,
+                   COALESCE(c.date, '') as date,
                    COALESCE(c.message, '') as message
             ORDER BY c.date DESC
             LIMIT 20
@@ -373,7 +373,7 @@ async def get_repository_metadata_from_neo4j(ctx: Context, repo_name: str) -> st
                  COLLECT(DISTINCT c) as classes,
                  COLLECT(DISTINCT m) as methods,
                  COLLECT(DISTINCT func) as functions
-            RETURN 
+            RETURN
                 SIZE([f IN files WHERE f IS NOT NULL]) as file_count,
                 SIZE([c IN classes WHERE c IS NOT NULL]) as class_count,
                 SIZE([m IN methods WHERE m IS NOT NULL]) as method_count,
@@ -407,12 +407,12 @@ async def get_repository_metadata_from_neo4j(ctx: Context, repo_name: str) -> st
             )
 
     except Exception as e:
-        logger.error(f"Error getting repository metadata: {e}")
+        logger.exception(f"Error getting repository metadata: {e}")
         return json.dumps(
             {
                 "error": "Failed to get repository metadata",
                 "details": str(e),
-            }
+            },
         )
 
 
@@ -426,7 +426,7 @@ async def update_repository_in_neo4j(ctx: Context, repo_url: str) -> str:
             {
                 "error": "Application context not available",
                 "details": "The application is not properly initialized",
-            }
+            },
         )
 
     repo_extractor = getattr(app_ctx, "repo_extractor", None)
@@ -436,7 +436,7 @@ async def update_repository_in_neo4j(ctx: Context, repo_url: str) -> str:
             {
                 "error": "Git manager not available for incremental updates",
                 "suggestion": "Re-parse the entire repository using parse_github_repository",
-            }
+            },
         )
 
     try:
@@ -455,7 +455,7 @@ async def update_repository_in_neo4j(ctx: Context, repo_url: str) -> str:
                     {
                         "error": f"Repository {repo_name} not found",
                         "suggestion": "Parse the repository first using parse_github_repository",
-                    }
+                    },
                 )
 
         # For now, just re-parse the repository
@@ -468,14 +468,14 @@ async def update_repository_in_neo4j(ctx: Context, repo_url: str) -> str:
                 "repository": repo_name,
                 "message": "Repository updated successfully",
                 "note": "Full re-parse performed (incremental updates coming soon)",
-            }
+            },
         )
 
     except Exception as e:
-        logger.error(f"Error updating repository: {e}")
+        logger.exception(f"Error updating repository: {e}")
         return json.dumps(
             {
                 "error": "Failed to update repository",
                 "details": str(e),
-            }
+            },
         )

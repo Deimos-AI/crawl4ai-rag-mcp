@@ -1,7 +1,7 @@
 """URL helper utilities for the Crawl4AI MCP server."""
 
 from urllib.parse import urldefrag, urlparse
-from xml.etree import ElementTree
+from xml.etree import ElementTree as ET
 
 import requests
 
@@ -49,7 +49,7 @@ def parse_sitemap(sitemap_url: str) -> list[str]:
 
     if resp.status_code == 200:
         try:
-            tree = ElementTree.fromstring(resp.content)
+            tree = ET.fromstring(resp.content)
             urls = [loc.text for loc in tree.findall(".//{*}loc")]
         except Exception as e:
             logger.error(f"Error parsing sitemap XML: {e}")

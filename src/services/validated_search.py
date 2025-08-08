@@ -101,7 +101,7 @@ class ValidatedCodeSearchService:
         query: str,
         match_count: int = 10,
         source_filter: str | None = None,
-        min_confidence: float = None,
+        min_confidence: float | None = None,
         include_suggestions: bool = True,
         parallel_validation: bool = True,
     ) -> dict[str, Any]:
@@ -196,7 +196,7 @@ class ValidatedCodeSearchService:
             }
 
         except Exception as e:
-            logger.error(f"Error in validated code search: {e}")
+            logger.exception(f"Error in validated code search: {e}")
             return {
                 "success": False,
                 "query": query,
@@ -217,7 +217,7 @@ class ValidatedCodeSearchService:
             if not query_embeddings:
                 return []
 
-            query_embedding = query_embeddings[0]
+            query_embeddings[0]
 
             # Prepare metadata filter
             filter_metadata = None
@@ -226,16 +226,15 @@ class ValidatedCodeSearchService:
 
             # Search code examples
             # Note: Using query parameter instead of query_embedding for newer interface
-            results = await self.database_client.search_code_examples(
+            return await self.database_client.search_code_examples(
                 query=query,  # Pass the query string, the adapter will create embeddings
                 match_count=match_count,
                 filter_metadata=filter_metadata,
             )
 
-            return results
 
         except Exception as e:
-            logger.error(f"Error in semantic search: {e}")
+            logger.exception(f"Error in semantic search: {e}")
             return []
 
     async def _validate_results_parallel(
@@ -257,7 +256,7 @@ class ValidatedCodeSearchService:
         # Execute validations in parallel
         try:
             validated_results = await asyncio.gather(
-                *validation_tasks, return_exceptions=True
+                *validation_tasks, return_exceptions=True,
             )
 
             # Handle any exceptions in individual validations
@@ -273,7 +272,7 @@ class ValidatedCodeSearchService:
             return final_results
 
         except Exception as e:
-            logger.error(f"Error in parallel validation: {e}")
+            logger.exception(f"Error in parallel validation: {e}")
             return [self._add_empty_validation(result) for result in results]
 
     async def _validate_results_sequential(
@@ -288,7 +287,7 @@ class ValidatedCodeSearchService:
             try:
                 if self.neo4j_enabled:
                     validated_result = await self._validate_single_result(
-                        result, include_suggestions
+                        result, include_suggestions,
                     )
                 else:
                     validated_result = self._add_empty_validation(result)
@@ -307,7 +306,7 @@ class ValidatedCodeSearchService:
         """Validate a single search result against Neo4j knowledge graph."""
         # Create cache key for this result
         cache_key = create_cache_key(
-            "validation", result.get("source_id", ""), result.get("metadata", {})
+            "validation", result.get("source_id", ""), result.get("metadata", {}),
         )
 
         # Check performance cache first
@@ -317,7 +316,7 @@ class ValidatedCodeSearchService:
         else:
             # Perform validation
             validation = await self._perform_neo4j_validation(
-                result, include_suggestions
+                result, include_suggestions,
             )
             # Cache the result for 1 hour
             await self.performance_optimizer.cache.set(cache_key, validation, ttl=3600)
@@ -344,34 +343,34 @@ class ValidatedCodeSearchService:
             code_type = metadata.get("code_type", "unknown")
             class_name = metadata.get("class_name")
             method_name = metadata.get("method_name") or metadata.get("name")
-            full_name = metadata.get("full_name", "")
+            metadata.get("full_name", "")
 
-            validation_result = ValidationResult()
+            ValidationResult()
             validation_checks = []
 
             # Validation 1: Check if the repository exists
             repo_exists = await self._check_repository_exists(
-                session, result.get("source_id")
+                session, result.get("source_id"),
             )
             validation_checks.append(
                 {
                     "check": "repository_exists",
                     "passed": repo_exists,
                     "weight": 0.3,
-                }
+                },
             )
 
             if code_type == "class" and class_name:
                 # Validation 2: Check if class exists
                 class_exists = await self._check_class_exists(
-                    session, class_name, result.get("source_id")
+                    session, class_name, result.get("source_id"),
                 )
                 validation_checks.append(
                     {
                         "check": "class_exists",
                         "passed": class_exists,
                         "weight": 0.4,
-                    }
+                    },
                 )
 
                 # Validation 3: Check class attributes/methods if available
@@ -387,7 +386,7 @@ class ValidatedCodeSearchService:
                             "check": "structure_valid",
                             "passed": structure_valid,
                             "weight": 0.3,
-                        }
+                        },
                     )
 
             elif code_type == "method" and method_name:
@@ -403,7 +402,7 @@ class ValidatedCodeSearchService:
                         "check": "method_exists",
                         "passed": method_exists,
                         "weight": 0.4,
-                    }
+                    },
                 )
 
                 # Validation 3: Check method signature if available
@@ -420,7 +419,7 @@ class ValidatedCodeSearchService:
                             "check": "signature_valid",
                             "passed": signature_valid,
                             "weight": 0.3,
-                        }
+                        },
                     )
 
             elif code_type == "function" and method_name:
@@ -435,7 +434,7 @@ class ValidatedCodeSearchService:
                         "check": "function_exists",
                         "passed": function_exists,
                         "weight": 0.7,
-                    }
+                    },
                 )
 
             # Calculate overall confidence score
@@ -462,7 +461,7 @@ class ValidatedCodeSearchService:
             }
 
         except Exception as e:
-            logger.error(f"Neo4j validation error: {e}")
+            logger.exception(f"Neo4j validation error: {e}")
             return {
                 "is_valid": False,
                 "confidence_score": 0.0,
@@ -513,7 +512,7 @@ class ValidatedCodeSearchService:
             return False
 
     async def _check_class_exists(
-        self, session, class_name: str, source_id: str
+        self, session, class_name: str, source_id: str,
     ) -> bool:
         """Check if class exists in the repository."""
         if not class_name:
@@ -526,7 +525,7 @@ class ValidatedCodeSearchService:
             RETURN count(c) > 0 as exists
             """
             result = await session.run(
-                query, repo_name=source_id, class_name=class_name
+                query, repo_name=source_id, class_name=class_name,
             )
             record = await result.single()
             return record["exists"] if record else False
@@ -566,7 +565,7 @@ class ValidatedCodeSearchService:
                 RETURN count(m) > 0 as exists
                 """
                 result = await session.run(
-                    query, repo_name=source_id, method_name=method_name
+                    query, repo_name=source_id, method_name=method_name,
                 )
 
             record = await result.single()
@@ -576,7 +575,7 @@ class ValidatedCodeSearchService:
             return False
 
     async def _check_function_exists(
-        self, session, function_name: str, source_id: str
+        self, session, function_name: str, source_id: str,
     ) -> bool:
         """Check if standalone function exists in the repository."""
         if not function_name:
@@ -589,7 +588,7 @@ class ValidatedCodeSearchService:
             RETURN count(func) > 0 as exists
             """
             result = await session.run(
-                query, repo_name=source_id, function_name=function_name
+                query, repo_name=source_id, function_name=function_name,
             )
             record = await result.single()
             return record["exists"] if record else False
@@ -643,25 +642,25 @@ class ValidatedCodeSearchService:
             if not check["passed"]:
                 if check["check"] == "repository_exists":
                     suggestions.append(
-                        f"Repository '{result.get('source_id')}' not found in knowledge graph. Consider parsing this repository first."
+                        f"Repository '{result.get('source_id')}' not found in knowledge graph. Consider parsing this repository first.",
                     )
                 elif check["check"] == "class_exists":
                     metadata = result.get("metadata", {})
                     class_name = metadata.get("class_name")
                     suggestions.append(
-                        f"Class '{class_name}' not found. Check class name spelling or repository parsing completeness."
+                        f"Class '{class_name}' not found. Check class name spelling or repository parsing completeness.",
                     )
                 elif check["check"] == "method_exists":
                     metadata = result.get("metadata", {})
                     method_name = metadata.get("method_name") or metadata.get("name")
                     suggestions.append(
-                        f"Method '{method_name}' not found. Verify method name or check if it's inherited."
+                        f"Method '{method_name}' not found. Verify method name or check if it's inherited.",
                     )
                 elif check["check"] == "function_exists":
                     metadata = result.get("metadata", {})
                     function_name = metadata.get("method_name") or metadata.get("name")
                     suggestions.append(
-                        f"Function '{function_name}' not found. Check function name or module location."
+                        f"Function '{function_name}' not found. Check function name or module location.",
                     )
 
         return suggestions
@@ -690,9 +689,8 @@ class ValidatedCodeSearchService:
 
         # Weight semantic similarity and validation confidence
         # Higher weight on validation for more reliable results
-        combined_score = (semantic_score * 0.4) + (confidence_score * 0.6)
+        return (semantic_score * 0.4) + (confidence_score * 0.6)
 
-        return combined_score
 
     def _generate_validation_summary(
         self,

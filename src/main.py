@@ -45,8 +45,7 @@ def create_mcp_server():
     """
     Create and return an MCP server instance for testing purposes.
     """
-    test_mcp = FastMCP("Crawl4AI MCP Server Test")
-    return test_mcp
+    return FastMCP("Crawl4AI MCP Server Test")
 
 
 async def main():
@@ -72,13 +71,13 @@ async def main():
                 logger.info(f"  - Crawler: {type(context.crawler).__name__}")
                 logger.info(f"  - Database: {type(context.database_client).__name__}")
                 logger.info(
-                    f"  - Reranking model: {'✓' if context.reranking_model else '✗'}"
+                    f"  - Reranking model: {'✓' if context.reranking_model else '✗'}",
                 )
                 logger.info(
-                    f"  - Knowledge validator: {'✓' if context.knowledge_validator else '✗'}"
+                    f"  - Knowledge validator: {'✓' if context.knowledge_validator else '✗'}",
                 )
                 logger.info(
-                    f"  - Repository extractor: {'✓' if context.repo_extractor else '✗'}"
+                    f"  - Repository extractor: {'✓' if context.repo_extractor else '✗'}",
                 )
 
                 # Run the HTTP server with the context active

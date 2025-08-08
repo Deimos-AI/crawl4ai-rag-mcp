@@ -10,9 +10,9 @@ from .search import search_and_process
 from .smart_crawl import smart_crawl_url
 
 __all__ = [
+    "crawl_batch",
     # Crawling services
     "crawl_markdown_file",
-    "crawl_batch",
     "crawl_recursive_internal_links",
     "process_urls_for_mcp",
     # Search services

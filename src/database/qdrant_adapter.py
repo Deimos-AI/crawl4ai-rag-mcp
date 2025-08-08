@@ -126,7 +126,7 @@ class QdrantAdapter:
 
             # Create points for Qdrant
             points = []
-            for j, (
+            for _j, (
                 url,
                 chunk_num,
                 content,
@@ -563,7 +563,8 @@ class QdrantAdapter:
             else:
                 final_embedding = query
         else:
-            raise ValueError("Either 'query' or 'query_embedding' must be provided")
+            msg = "Either 'query' or 'query_embedding' must be provided"
+            raise ValueError(msg)
 
         # Build filter if needed
         filter_conditions = []
@@ -941,7 +942,8 @@ class QdrantAdapter:
             )
 
             if not existing_points:
-                raise ValueError(f"Source {source_id} not found")
+                msg = f"Source {source_id} not found"
+                raise ValueError(msg)
 
             # Update payload
             existing_point = existing_points[0]

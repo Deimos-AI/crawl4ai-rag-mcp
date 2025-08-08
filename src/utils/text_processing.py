@@ -9,7 +9,7 @@ try:
 except ImportError:
     # Provide a simple fallback implementation
     def generate_code_example_summary(
-        code: str, context_before: str = "", context_after: str = ""
+        code: str, context_before: str = "", context_after: str = "",
     ) -> str:
         """Simple fallback for code example summary generation."""
         lines = code.strip().split("\n")

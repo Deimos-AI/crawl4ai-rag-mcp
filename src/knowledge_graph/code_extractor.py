@@ -109,7 +109,8 @@ class Neo4jCodeExtractor:
 
         # Check if repository exists
         if not await self._repository_exists(repo_name):
-            raise ValueError(f"Repository '{repo_name}' not found in knowledge graph")
+            msg = f"Repository '{repo_name}' not found in knowledge graph"
+            raise ValueError(msg)
 
         code_examples = []
 
@@ -140,7 +141,7 @@ class Neo4jCodeExtractor:
         query = """
         MATCH (r:Repository {name: $repo_name})-[:CONTAINS]->(f:File)-[:DEFINES]->(c:Class)
         OPTIONAL MATCH (c)-[:HAS_METHOD]->(m:Method)
-        RETURN 
+        RETURN
             c.name as class_name,
             c.full_name as class_full_name,
             f.path as file_path,
@@ -186,7 +187,7 @@ class Neo4jCodeExtractor:
             # Create individual method examples for important methods
             for method in methods:
                 if method["name"] and not method["name"].startswith(
-                    "_"
+                    "_",
                 ):  # Public methods
                     method_code = self._generate_method_code(method)
                     method_example = CodeExample(
@@ -209,7 +210,7 @@ class Neo4jCodeExtractor:
         """Extract standalone function definitions."""
         query = """
         MATCH (r:Repository {name: $repo_name})-[:CONTAINS]->(f:File)-[:DEFINES]->(func:Function)
-        RETURN 
+        RETURN
             func.name as function_name,
             func.params_list as params_list,
             func.params_detailed as params_detailed,
@@ -226,7 +227,7 @@ class Neo4jCodeExtractor:
         async for record in result:
             function_name = record["function_name"]
             if not function_name or function_name.startswith(
-                "_"
+                "_",
             ):  # Skip private functions
                 continue
 
@@ -243,7 +244,7 @@ class Neo4jCodeExtractor:
                     "params_detailed": record["params_detailed"],
                     "return_type": return_type,
                     "args": record["args"],
-                }
+                },
             )
 
             full_name = (
@@ -309,7 +310,7 @@ class Neo4jCodeExtractor:
 
 
 async def extract_repository_code(
-    repo_extractor: Any, repo_name: str
+    repo_extractor: Any, repo_name: str,
 ) -> dict[str, Any]:
     """
     Main function to extract code from a repository using the repository extractor.
@@ -341,7 +342,7 @@ async def extract_repository_code(
                         "code_text": example.code_text,
                         "embedding_text": example.generate_embedding_text(),
                         "metadata": example.to_metadata(),
-                    }
+                    },
                 )
 
             return {
@@ -351,19 +352,19 @@ async def extract_repository_code(
                 "code_examples": examples_data,
                 "extraction_summary": {
                     "classes": len(
-                        [e for e in code_examples if e.code_type == "class"]
+                        [e for e in code_examples if e.code_type == "class"],
                     ),
                     "methods": len(
-                        [e for e in code_examples if e.code_type == "method"]
+                        [e for e in code_examples if e.code_type == "method"],
                     ),
                     "functions": len(
-                        [e for e in code_examples if e.code_type == "function"]
+                        [e for e in code_examples if e.code_type == "function"],
                     ),
                 },
             }
 
     except Exception as e:
-        logger.error(f"Error extracting code from repository {repo_name}: {e}")
+        logger.exception(f"Error extracting code from repository {repo_name}: {e}")
         return {
             "success": False,
             "repository_name": repo_name,

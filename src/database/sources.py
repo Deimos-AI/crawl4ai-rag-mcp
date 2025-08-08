@@ -37,7 +37,7 @@ async def update_source_summary(
         )
         logger.info(f"Updated source summary for {source_id}")
     except Exception as e:
-        logger.error(f"Error updating source summary for {source_id}: {e}")
+        logger.exception(f"Error updating source summary for {source_id}: {e}")
         raise
 
 
@@ -62,7 +62,7 @@ async def get_source_statistics(
                 return source
         return None
     except Exception as e:
-        logger.error(f"Error getting source statistics for {source_id}: {e}")
+        logger.exception(f"Error getting source statistics for {source_id}: {e}")
         raise
 
 
@@ -80,5 +80,5 @@ async def list_all_sources(database_client: Any) -> list[dict[str, Any]]:
         sources = await database_client.get_sources()
         return sources or []
     except Exception as e:
-        logger.error(f"Error listing sources: {e}")
+        logger.exception(f"Error listing sources: {e}")
         raise

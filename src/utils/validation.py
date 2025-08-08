@@ -267,7 +267,7 @@ def validate_github_url(repo_url: str) -> dict[str, Any]:
         return {"valid": False, "error": "Please provide a valid GitHub repository URL"}
 
     # Check URL format
-    if not (repo_url.startswith("https://") or repo_url.startswith("git@")):
+    if not (repo_url.startswith(("https://", "git@"))):
         return {
             "valid": False,
             "error": "Repository URL must start with https:// or git@",

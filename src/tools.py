@@ -220,8 +220,9 @@ def register_tools(mcp):
                 max_concurrent=max_concurrent,
             )
         except Exception as e:
-            logger.error(f"Error in search tool: {e}")
-            raise MCPToolError(f"Search failed: {e!s}")
+            logger.exception(f"Error in search tool: {e}")
+            msg = f"Search failed: {e!s}"
+            raise MCPToolError(msg)
 
     @mcp.tool()
     @track_request("scrape_urls")
@@ -259,15 +260,16 @@ def register_tools(mcp):
 
             # Enhanced debug logging
             logger.debug(
-                f"scrape_urls received url parameter (type: {type(url).__name__})"
+                f"scrape_urls received url parameter (type: {type(url).__name__})",
             )
 
             urls = []
             if isinstance(url, str):
                 # Security check: Limit input size
                 if len(url) > MAX_INPUT_SIZE:
+                    msg = f"Input too large: {len(url)} bytes (max: {MAX_INPUT_SIZE})"
                     raise ValueError(
-                        f"Input too large: {len(url)} bytes (max: {MAX_INPUT_SIZE})"
+                        msg,
                     )
                 # Clean whitespace and normalize the string
                 cleaned_url = url.strip()
@@ -288,18 +290,18 @@ def register_tools(mcp):
                         if isinstance(parsed, list):
                             urls = parsed
                             logger.debug(
-                                f"Successfully parsed JSON array with {len(urls)} URLs"
+                                f"Successfully parsed JSON array with {len(urls)} URLs",
                             )
                         else:
                             urls = [
-                                cleaned_url
+                                cleaned_url,
                             ]  # Single URL that looks like JSON but isn't a list
                             logger.debug(
-                                "JSON parsed but result is not a list, treating as single URL"
+                                "JSON parsed but result is not a list, treating as single URL",
                             )
                     except json.JSONDecodeError as json_err:
                         logger.debug(
-                            f"JSON parsing failed ({json_err}), treating as single URL"
+                            f"JSON parsing failed ({json_err}), treating as single URL",
                         )
                         # Don't attempt fallback parsing with comma split as it can break valid URLs
                         # URLs can contain commas in query parameters
@@ -313,7 +315,7 @@ def register_tools(mcp):
             else:
                 # Handle other types by converting to string
                 logger.warning(
-                    f"Unexpected URL parameter type {type(url)}, converting to string"
+                    f"Unexpected URL parameter type {type(url)}, converting to string",
                 )
                 urls = [str(url)]
 
@@ -343,14 +345,14 @@ def register_tools(mcp):
                         logger.warning(f"URL {i + 1} failed cleaning: {url_str}")
 
                 except Exception as url_err:
-                    logger.error(
-                        f"Error processing URL {i + 1} ({raw_url!r}): {url_err}"
+                    logger.exception(
+                        f"Error processing URL {i + 1} ({raw_url!r}): {url_err}",
                     )
                     invalid_urls.append(str(raw_url))
 
             # Log final results
             logger.info(
-                f"URL processing complete: {len(cleaned_urls)} valid URLs, {len(invalid_urls)} invalid URLs"
+                f"URL processing complete: {len(cleaned_urls)} valid URLs, {len(invalid_urls)} invalid URLs",
             )
             if invalid_urls:
                 logger.warning(f"Invalid URLs that were skipped: {invalid_urls}")
@@ -369,8 +371,9 @@ def register_tools(mcp):
                 return_raw_markdown=return_raw_markdown,
             )
         except Exception as e:
-            logger.error(f"Error in scrape_urls tool: {e}")
-            raise MCPToolError(f"Scraping failed: {e!s}")
+            logger.exception(f"Error in scrape_urls tool: {e}")
+            msg = f"Scraping failed: {e!s}"
+            raise MCPToolError(msg)
 
     @mcp.tool()
     @track_request("smart_crawl_url")
@@ -439,8 +442,9 @@ def register_tools(mcp):
                 query=parsed_query,
             )
         except Exception as e:
-            logger.error(f"Error in smart_crawl_url tool: {e}")
-            raise MCPToolError(f"Smart crawl failed: {e!s}")
+            logger.exception(f"Error in smart_crawl_url tool: {e}")
+            msg = f"Smart crawl failed: {e!s}"
+            raise MCPToolError(msg)
 
     @mcp.tool()
     @track_request("get_available_sources")
@@ -464,8 +468,9 @@ def register_tools(mcp):
         try:
             return await get_available_sources_wrapper(ctx)
         except Exception as e:
-            logger.error(f"Error in get_available_sources tool: {e}")
-            raise MCPToolError(f"Failed to get sources: {e!s}")
+            logger.exception(f"Error in get_available_sources tool: {e}")
+            msg = f"Failed to get sources: {e!s}"
+            raise MCPToolError(msg)
 
     @mcp.tool()
     @track_request("perform_rag_query")
@@ -498,8 +503,9 @@ def register_tools(mcp):
                 match_count=match_count,
             )
         except Exception as e:
-            logger.error(f"Error in perform_rag_query tool: {e}")
-            raise MCPToolError(f"RAG query failed: {e!s}")
+            logger.exception(f"Error in perform_rag_query tool: {e}")
+            msg = f"RAG query failed: {e!s}"
+            raise MCPToolError(msg)
 
     @mcp.tool()
     @track_request("search_code_examples")
@@ -534,8 +540,9 @@ def register_tools(mcp):
                 match_count=match_count,
             )
         except Exception as e:
-            logger.error(f"Error in search_code_examples tool: {e}")
-            raise MCPToolError(f"Code example search failed: {e!s}")
+            logger.exception(f"Error in search_code_examples tool: {e}")
+            msg = f"Code example search failed: {e!s}"
+            raise MCPToolError(msg)
 
     @mcp.tool()
     @track_request("check_ai_script_hallucinations")
@@ -567,13 +574,13 @@ def register_tools(mcp):
             # Validate script path
             validation_result = validate_script_path(script_path)
             if isinstance(validation_result, dict) and not validation_result.get(
-                "valid", False
+                "valid", False,
             ):
                 return json.dumps(
                     {
                         "success": False,
                         "error": validation_result.get(
-                            "error", "Script validation failed"
+                            "error", "Script validation failed",
                         ),
                     },
                     indent=2,
@@ -613,8 +620,9 @@ def register_tools(mcp):
             )
 
         except Exception as e:
-            logger.error(f"Error in check_ai_script_hallucinations tool: {e}")
-            raise MCPToolError(f"Hallucination check failed: {e!s}")
+            logger.exception(f"Error in check_ai_script_hallucinations tool: {e}")
+            msg = f"Hallucination check failed: {e!s}"
+            raise MCPToolError(msg)
 
     @mcp.tool()
     @track_request("query_knowledge_graph")
@@ -688,8 +696,9 @@ def register_tools(mcp):
         try:
             return await query_knowledge_graph_wrapper(ctx, command)
         except Exception as e:
-            logger.error(f"Error in query_knowledge_graph tool: {e}")
-            raise MCPToolError(f"Knowledge graph query failed: {e!s}")
+            logger.exception(f"Error in query_knowledge_graph tool: {e}")
+            msg = f"Knowledge graph query failed: {e!s}"
+            raise MCPToolError(msg)
 
     @mcp.tool()
     @track_request("parse_github_repository")
@@ -724,8 +733,9 @@ def register_tools(mcp):
 
             return await parse_github_repository_wrapper(ctx, repo_url)
         except Exception as e:
-            logger.error(f"Error in parse_github_repository tool: {e}")
-            raise MCPToolError(f"Repository parsing failed: {e!s}")
+            logger.exception(f"Error in parse_github_repository tool: {e}")
+            msg = f"Repository parsing failed: {e!s}"
+            raise MCPToolError(msg)
 
     @mcp.tool()
     @track_request("parse_repository_branch")
@@ -765,8 +775,9 @@ def register_tools(mcp):
 
             return await parse_github_repository_with_branch(ctx, repo_url, branch)
         except Exception as e:
-            logger.error(f"Error in parse_repository_branch tool: {e}")
-            raise MCPToolError(f"Repository branch parsing failed: {e!s}")
+            logger.exception(f"Error in parse_repository_branch tool: {e}")
+            msg = f"Repository branch parsing failed: {e!s}"
+            raise MCPToolError(msg)
 
     @mcp.tool()
     @track_request("get_repository_info")
@@ -797,8 +808,9 @@ def register_tools(mcp):
 
             return await get_repository_metadata_from_neo4j(ctx, repo_name)
         except Exception as e:
-            logger.error(f"Error in get_repository_info tool: {e}")
-            raise MCPToolError(f"Failed to get repository info: {e!s}")
+            logger.exception(f"Error in get_repository_info tool: {e}")
+            msg = f"Failed to get repository info: {e!s}"
+            raise MCPToolError(msg)
 
     @mcp.tool()
     @track_request("update_parsed_repository")
@@ -833,8 +845,9 @@ def register_tools(mcp):
 
             return await update_repository_in_neo4j(ctx, repo_url)
         except Exception as e:
-            logger.error(f"Error in update_parsed_repository tool: {e}")
-            raise MCPToolError(f"Repository update failed: {e!s}")
+            logger.exception(f"Error in update_parsed_repository tool: {e}")
+            msg = f"Repository update failed: {e!s}"
+            raise MCPToolError(msg)
 
     @mcp.tool()
     @track_request("extract_and_index_repository_code")
@@ -895,7 +908,7 @@ def register_tools(mcp):
 
             # Clean up any existing code examples for this repository
             logger.info(
-                f"Cleaning up existing code examples for repository: {repo_name}"
+                f"Cleaning up existing code examples for repository: {repo_name}",
             )
             try:
                 await app_ctx.database_client.delete_repository_code_examples(repo_name)
@@ -906,7 +919,7 @@ def register_tools(mcp):
             from knowledge_graph.code_extractor import extract_repository_code
 
             extraction_result = await extract_repository_code(
-                app_ctx.repo_extractor, repo_name
+                app_ctx.repo_extractor, repo_name,
             )
 
             if not extraction_result["success"]:
@@ -930,7 +943,7 @@ def register_tools(mcp):
 
             embedding_texts = [example["embedding_text"] for example in code_examples]
             logger.info(
-                f"Generating embeddings for {len(embedding_texts)} code examples"
+                f"Generating embeddings for {len(embedding_texts)} code examples",
             )
 
             embeddings = create_embeddings_batch(embedding_texts)
@@ -959,7 +972,7 @@ def register_tools(mcp):
                 chunk_numbers.append(i)
                 code_texts.append(example["code_text"])
                 summaries.append(
-                    f"{example['code_type'].title()}: {example['full_name']}"
+                    f"{example['code_type'].title()}: {example['full_name']}",
                 )
                 metadatas.append(example["metadata"])
                 source_ids.append(repo_name)
@@ -1008,7 +1021,7 @@ def register_tools(mcp):
             )
 
         except Exception as e:
-            logger.error(f"Error in extract_and_index_repository_code tool: {e}")
+            logger.exception(f"Error in extract_and_index_repository_code tool: {e}")
             return json.dumps(
                 {
                     "success": False,
@@ -1078,7 +1091,7 @@ def register_tools(mcp):
                 neo4j_driver = getattr(app_ctx.repo_extractor, "driver", None)
 
             validated_search = ValidatedCodeSearchService(
-                app_ctx.database_client, neo4j_driver
+                app_ctx.database_client, neo4j_driver,
             )
 
             # Configure validation based on mode
@@ -1089,7 +1102,7 @@ def register_tools(mcp):
             elif validation_mode == "thorough":
                 parallel_validation = False  # Sequential for thoroughness
                 min_confidence = max(
-                    min_confidence, 0.7
+                    min_confidence, 0.7,
                 )  # Higher threshold for accuracy
             # balanced mode uses defaults
 
@@ -1106,7 +1119,7 @@ def register_tools(mcp):
             return json.dumps(result, indent=2)
 
         except Exception as e:
-            logger.error(f"Error in smart_code_search tool: {e}")
+            logger.exception(f"Error in smart_code_search tool: {e}")
             return json.dumps(
                 {
                     "success": False,
@@ -1153,13 +1166,13 @@ def register_tools(mcp):
             # Validate script path
             validation_result = validate_script_path(script_path)
             if isinstance(validation_result, dict) and not validation_result.get(
-                "valid", False
+                "valid", False,
             ):
                 return json.dumps(
                     {
                         "success": False,
                         "error": validation_result.get(
-                            "error", "Script validation failed"
+                            "error", "Script validation failed",
                         ),
                     },
                     indent=2,
@@ -1199,8 +1212,9 @@ def register_tools(mcp):
             )
 
         except Exception as e:
-            logger.error(f"Error in enhanced hallucination detection tool: {e}")
-            raise MCPToolError(f"Enhanced hallucination check failed: {e!s}")
+            logger.exception(f"Error in enhanced hallucination detection tool: {e}")
+            msg = f"Enhanced hallucination check failed: {e!s}"
+            raise MCPToolError(msg)
 
     @mcp.tool()
     @track_request("get_script_analysis_info")

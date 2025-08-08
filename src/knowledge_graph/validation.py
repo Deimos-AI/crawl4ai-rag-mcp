@@ -75,7 +75,7 @@ async def check_ai_script_hallucinations(
                 indent=2,
             )
 
-        if not script_file.suffix == ".py":
+        if script_file.suffix != ".py":
             return json.dumps(
                 {
                     "success": False,
@@ -108,7 +108,7 @@ async def check_ai_script_hallucinations(
         # - Function calls with arguments
         # - Attribute accesses
         analysis_result = await script_analyzer.analyze_script(
-            script_content, str(script_file)
+            script_content, str(script_file),
         )
 
         # Step 2: Validate against the knowledge graph
@@ -152,7 +152,7 @@ async def check_ai_script_hallucinations(
         )
 
     except Exception as e:
-        logger.error(f"Error checking script hallucinations: {e}")
+        logger.exception(f"Error checking script hallucinations: {e}")
         return json.dumps(
             {
                 "success": False,

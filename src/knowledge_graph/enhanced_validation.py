@@ -71,7 +71,7 @@ class EnhancedScriptAnalyzer:
             }
 
         except SyntaxError as e:
-            logger.error(f"Syntax error in script {script_path}: {e}")
+            logger.exception(f"Syntax error in script {script_path}: {e}")
             return {
                 "error": f"Syntax error: {e}",
                 "imports": [],
@@ -83,7 +83,7 @@ class EnhancedScriptAnalyzer:
                 "attribute_accesses": [],
             }
         except Exception as e:
-            logger.error(f"Error analyzing script {script_path}: {e}")
+            logger.exception(f"Error analyzing script {script_path}: {e}")
             return {
                 "error": f"Analysis error: {e}",
                 "imports": [],
@@ -115,7 +115,7 @@ class EnhancedScriptAnalyzer:
                         "module": alias.name,
                         "alias": alias.asname,
                         "line": node.lineno,
-                    }
+                    },
                 )
 
         elif isinstance(node, ast.ImportFrom):
@@ -127,7 +127,7 @@ class EnhancedScriptAnalyzer:
                         "name": alias.name,
                         "alias": alias.asname,
                         "line": node.lineno,
-                    }
+                    },
                 )
 
         elif isinstance(node, ast.ClassDef):
@@ -141,7 +141,7 @@ class EnhancedScriptAnalyzer:
                         if isinstance(item, ast.FunctionDef)
                     ],
                     "line": node.lineno,
-                }
+                },
             )
 
         elif isinstance(node, ast.FunctionDef):
@@ -154,7 +154,7 @@ class EnhancedScriptAnalyzer:
                         "class": parent_classes[-1],  # Immediate parent class
                         "args": [arg.arg for arg in node.args.args],
                         "line": node.lineno,
-                    }
+                    },
                 )
             else:
                 self.functions.append(
@@ -162,7 +162,7 @@ class EnhancedScriptAnalyzer:
                         "name": node.name,
                         "args": [arg.arg for arg in node.args.args],
                         "line": node.lineno,
-                    }
+                    },
                 )
 
         elif isinstance(node, ast.Call):
@@ -182,7 +182,7 @@ class EnhancedScriptAnalyzer:
                         {
                             "name": target.id,
                             "line": node.lineno,
-                        }
+                        },
                     )
 
     def _get_node_name(self, node: ast.AST) -> str:
@@ -255,7 +255,7 @@ class EnhancedHallucinationDetector:
 
         # Initialize validated search service
         self.validated_search = ValidatedCodeSearchService(
-            database_client, neo4j_driver
+            database_client, neo4j_driver,
         )
 
         # Confidence thresholds
@@ -287,24 +287,24 @@ class EnhancedHallucinationDetector:
             script_file = Path(script_path)
             if not script_file.exists():
                 return self._create_error_response(
-                    script_path, f"Script file not found: {script_path}"
+                    script_path, f"Script file not found: {script_path}",
                 )
 
-            if not script_file.suffix == ".py":
+            if script_file.suffix != ".py":
                 return self._create_error_response(
-                    script_path, "Only Python (.py) files are supported"
+                    script_path, "Only Python (.py) files are supported",
                 )
 
             script_content = script_file.read_text(encoding="utf-8")
 
             # Step 1: Analyze script structure
             analysis_result = self.script_analyzer.analyze_script(
-                script_content, script_path
+                script_content, script_path,
             )
 
             if "error" in analysis_result:
                 return self._create_error_response(
-                    script_path, analysis_result["error"]
+                    script_path, analysis_result["error"],
                 )
 
             # Step 2: Perform Neo4j validation (traditional approach)
@@ -323,21 +323,20 @@ class EnhancedHallucinationDetector:
             )
 
             # Step 5: Generate comprehensive report
-            report = await self._generate_comprehensive_report(
+            return await self._generate_comprehensive_report(
                 script_path,
                 analysis_result,
                 combined_validation,
                 detailed_analysis,
             )
 
-            return report
 
         except Exception as e:
-            logger.error(f"Error in enhanced hallucination detection: {e}")
+            logger.exception(f"Error in enhanced hallucination detection: {e}")
             return self._create_error_response(script_path, f"Detection failed: {e!s}")
 
     async def _perform_neo4j_validation(
-        self, analysis_result: dict[str, Any]
+        self, analysis_result: dict[str, Any],
     ) -> dict[str, Any]:
         """Perform traditional Neo4j knowledge graph validation."""
         try:
@@ -365,16 +364,16 @@ class EnhancedHallucinationDetector:
 
             try:
                 import_validations = await self._validate_imports(
-                    session, analysis_result.get("imports", [])
+                    session, analysis_result.get("imports", []),
                 )
                 class_validations = await self._validate_classes(
-                    session, analysis_result.get("classes", [])
+                    session, analysis_result.get("classes", []),
                 )
                 method_validations = await self._validate_method_calls(
-                    session, analysis_result.get("method_calls", [])
+                    session, analysis_result.get("method_calls", []),
                 )
                 function_validations = await self._validate_function_calls(
-                    session, analysis_result.get("functions", [])
+                    session, analysis_result.get("functions", []),
                 )
 
                 return {
@@ -388,7 +387,7 @@ class EnhancedHallucinationDetector:
                 await session.close()
 
         except Exception as e:
-            logger.error(f"Neo4j validation error: {e}")
+            logger.exception(f"Neo4j validation error: {e}")
             return {
                 "available": False,
                 "reason": f"Validation error: {e!s}",
@@ -439,9 +438,9 @@ class EnhancedHallucinationDetector:
                             "query": search_query,
                             "examples": search_result["results"],
                             "validation_summary": search_result.get(
-                                "validation_summary", {}
+                                "validation_summary", {},
                             ),
-                        }
+                        },
                     )
 
                     # Collect suggestions
@@ -456,7 +455,7 @@ class EnhancedHallucinationDetector:
             }
 
         except Exception as e:
-            logger.error(f"Qdrant validation error: {e}")
+            logger.exception(f"Qdrant validation error: {e}")
             return {
                 "available": False,
                 "reason": f"Validation error: {e!s}",
@@ -465,7 +464,7 @@ class EnhancedHallucinationDetector:
             }
 
     def _extract_code_elements_for_search(
-        self, analysis_result: dict[str, Any]
+        self, analysis_result: dict[str, Any],
     ) -> list[dict[str, Any]]:
         """Extract key code elements that should be validated against examples."""
         elements = []
@@ -478,7 +477,7 @@ class EnhancedHallucinationDetector:
                     "name": class_info["name"],
                     "context": f"class {class_info['name']}",
                     "details": class_info,
-                }
+                },
             )
 
         # Extract method call patterns
@@ -490,7 +489,7 @@ class EnhancedHallucinationDetector:
                         "name": f"{method_call.get('object', '')}.{method_call.get('method', '')}",
                         "context": f"{method_call.get('object', '')}.{method_call.get('method', '')}()",
                         "details": method_call,
-                    }
+                    },
                 )
 
         # Extract function call patterns
@@ -502,7 +501,7 @@ class EnhancedHallucinationDetector:
                         "name": function_call.get("name", ""),
                         "context": f"{function_call.get('name', '')}()",
                         "details": function_call,
-                    }
+                    },
                 )
 
         # Extract import patterns
@@ -514,7 +513,7 @@ class EnhancedHallucinationDetector:
                         "name": f"{import_info.get('module', '')}.{import_info.get('name', '')}",
                         "context": f"from {import_info.get('module', '')} import {import_info.get('name', '')}",
                         "details": import_info,
-                    }
+                    },
                 )
 
         return elements
@@ -537,7 +536,7 @@ class EnhancedHallucinationDetector:
         return context or name
 
     async def _validate_imports(
-        self, session, imports: list[dict]
+        self, session, imports: list[dict],
     ) -> list[dict[str, Any]]:
         """Validate imports against Neo4j knowledge graph."""
         validations = []
@@ -566,7 +565,7 @@ class EnhancedHallucinationDetector:
                             if record
                             else None,
                             "confidence": 0.8 if (record and record["exists"]) else 0.2,
-                        }
+                        },
                     )
 
             except Exception as e:
@@ -577,13 +576,13 @@ class EnhancedHallucinationDetector:
                         "exists": False,
                         "error": str(e),
                         "confidence": 0.0,
-                    }
+                    },
                 )
 
         return validations
 
     async def _validate_classes(
-        self, session, classes: list[dict]
+        self, session, classes: list[dict],
     ) -> list[dict[str, Any]]:
         """Validate class definitions against Neo4j knowledge graph."""
         validations = []
@@ -606,7 +605,7 @@ class EnhancedHallucinationDetector:
                         "exists": record["exists"] if record else False,
                         "found_in_repos": record.get("repos", []) if record else [],
                         "confidence": 0.8 if (record and record["exists"]) else 0.2,
-                    }
+                    },
                 )
 
             except Exception as e:
@@ -617,13 +616,13 @@ class EnhancedHallucinationDetector:
                         "exists": False,
                         "error": str(e),
                         "confidence": 0.0,
-                    }
+                    },
                 )
 
         return validations
 
     async def _validate_method_calls(
-        self, session, method_calls: list[dict]
+        self, session, method_calls: list[dict],
     ) -> list[dict[str, Any]]:
         """Validate method calls against Neo4j knowledge graph."""
         validations = []
@@ -649,7 +648,7 @@ class EnhancedHallucinationDetector:
                         "exists": record["exists"] if record else False,
                         "found_in_classes": record.get("classes", []) if record else [],
                         "confidence": 0.7 if (record and record["exists"]) else 0.3,
-                    }
+                    },
                 )
 
             except Exception as e:
@@ -660,13 +659,13 @@ class EnhancedHallucinationDetector:
                         "exists": False,
                         "error": str(e),
                         "confidence": 0.0,
-                    }
+                    },
                 )
 
         return validations
 
     async def _validate_function_calls(
-        self, session, functions: list[dict]
+        self, session, functions: list[dict],
     ) -> list[dict[str, Any]]:
         """Validate function calls against Neo4j knowledge graph."""
         validations = []
@@ -689,7 +688,7 @@ class EnhancedHallucinationDetector:
                         "exists": record["exists"] if record else False,
                         "found_in_repos": record.get("repos", []) if record else [],
                         "confidence": 0.7 if (record and record["exists"]) else 0.3,
-                    }
+                    },
                 )
 
             except Exception as e:
@@ -700,7 +699,7 @@ class EnhancedHallucinationDetector:
                         "exists": False,
                         "error": str(e),
                         "confidence": 0.0,
-                    }
+                    },
                 )
 
         return validations
@@ -782,7 +781,7 @@ class EnhancedHallucinationDetector:
         return total_confidence / total_examples if total_examples > 0 else 0.5
 
     def _extract_neo4j_hallucinations(
-        self, neo4j_validation: dict[str, Any]
+        self, neo4j_validation: dict[str, Any],
     ) -> list[dict[str, Any]]:
         """Extract hallucinations from Neo4j validation results."""
         hallucinations = []
@@ -805,13 +804,13 @@ class EnhancedHallucinationDetector:
                             "severity": "high"
                             if validation.get("confidence", 0) < 0.3
                             else "medium",
-                        }
+                        },
                     )
 
         return hallucinations
 
     def _extract_qdrant_hallucinations(
-        self, qdrant_validation: dict[str, Any]
+        self, qdrant_validation: dict[str, Any],
     ) -> list[dict[str, Any]]:
         """Extract hallucinations from Qdrant validation results."""
         hallucinations = []
@@ -844,13 +843,13 @@ class EnhancedHallucinationDetector:
                         "examples_found": len(examples),
                         "high_confidence_examples": 0,
                         "severity": "high" if avg_confidence < 0.3 else "medium",
-                    }
+                    },
                 )
 
         return hallucinations
 
     def _generate_neo4j_suggestions(
-        self, neo4j_validation: dict[str, Any]
+        self, neo4j_validation: dict[str, Any],
     ) -> list[str]:
         """Generate suggestions from Neo4j validation results."""
         suggestions = []
@@ -867,12 +866,12 @@ class EnhancedHallucinationDetector:
                     if validation_type == "import_validations":
                         import_info = validation.get("import", {})
                         suggestions.append(
-                            f"Import '{import_info.get('module', '')}.{import_info.get('name', '')}' not found in knowledge graph. Consider checking the module name or parsing the relevant repository."
+                            f"Import '{import_info.get('module', '')}.{import_info.get('name', '')}' not found in knowledge graph. Consider checking the module name or parsing the relevant repository.",
                         )
                     elif validation_type == "class_validations":
                         class_info = validation.get("class", {})
                         suggestions.append(
-                            f"Class '{class_info.get('name', '')}' not found. Check class name spelling or ensure the relevant repository is parsed."
+                            f"Class '{class_info.get('name', '')}' not found. Check class name spelling or ensure the relevant repository is parsed.",
                         )
 
         return suggestions
@@ -931,10 +930,10 @@ class EnhancedHallucinationDetector:
             "analysis_metadata": {
                 "script_analysis": analysis_result.get("analysis_metadata", {}),
                 "neo4j_confidence": self._calculate_neo4j_confidence(
-                    combined_validation.get("neo4j_validation", {})
+                    combined_validation.get("neo4j_validation", {}),
                 ),
                 "qdrant_confidence": self._calculate_qdrant_confidence(
-                    combined_validation.get("qdrant_validation", {})
+                    combined_validation.get("qdrant_validation", {}),
                 ),
                 "combined_approach": True,
             },
@@ -951,7 +950,7 @@ class EnhancedHallucinationDetector:
         return report
 
     def _create_error_response(
-        self, script_path: str, error_message: str
+        self, script_path: str, error_message: str,
     ) -> dict[str, Any]:
         """Create a standardized error response."""
         return {
@@ -1010,7 +1009,7 @@ async def check_ai_script_hallucinations_enhanced(
         return json.dumps(result, indent=2)
 
     except Exception as e:
-        logger.error(f"Error in enhanced hallucination detection: {e}")
+        logger.exception(f"Error in enhanced hallucination detection: {e}")
         return json.dumps(
             {
                 "success": False,

@@ -31,8 +31,9 @@ class SupabaseAdapter:
             key = os.getenv("SUPABASE_SERVICE_KEY")
 
             if not url or not key:
+                msg = "SUPABASE_URL and SUPABASE_SERVICE_KEY must be set in environment variables"
                 raise ValueError(
-                    "SUPABASE_URL and SUPABASE_SERVICE_KEY must be set in environment variables",
+                    msg,
                 )
 
             self.client = create_client(url, key)
@@ -48,7 +49,8 @@ class SupabaseAdapter:
     ) -> None:
         """Add documents to Supabase with batch processing"""
         if not self.client:
-            raise RuntimeError("Database not initialized. Call initialize() first.")
+            msg = "Database not initialized. Call initialize() first."
+            raise RuntimeError(msg)
 
         # Get unique URLs to delete existing records
         unique_urls = list(set(urls))
@@ -95,7 +97,8 @@ class SupabaseAdapter:
     ) -> list[dict[str, Any]]:
         """Search documents using vector similarity"""
         if not self.client:
-            raise RuntimeError("Database not initialized. Call initialize() first.")
+            msg = "Database not initialized. Call initialize() first."
+            raise RuntimeError(msg)
 
         try:
             # Build parameters for RPC call
@@ -118,7 +121,8 @@ class SupabaseAdapter:
     async def delete_documents_by_url(self, urls: list[str]) -> None:
         """Delete documents by URL"""
         if not self.client:
-            raise RuntimeError("Database not initialized. Call initialize() first.")
+            msg = "Database not initialized. Call initialize() first."
+            raise RuntimeError(msg)
 
         await self._delete_documents_batch(urls)
 
@@ -134,7 +138,8 @@ class SupabaseAdapter:
     ) -> None:
         """Add code examples to Supabase"""
         if not self.client:
-            raise RuntimeError("Database not initialized. Call initialize() first.")
+            msg = "Database not initialized. Call initialize() first."
+            raise RuntimeError(msg)
 
         if not urls:
             return
@@ -182,7 +187,8 @@ class SupabaseAdapter:
     ) -> list[dict[str, Any]]:
         """Search code examples using vector similarity"""
         if not self.client:
-            raise RuntimeError("Database not initialized. Call initialize() first.")
+            msg = "Database not initialized. Call initialize() first."
+            raise RuntimeError(msg)
 
         try:
             # Build parameters for RPC call
@@ -205,7 +211,8 @@ class SupabaseAdapter:
     async def delete_code_examples_by_url(self, urls: list[str]) -> None:
         """Delete code examples by URL"""
         if not self.client:
-            raise RuntimeError("Database not initialized. Call initialize() first.")
+            msg = "Database not initialized. Call initialize() first."
+            raise RuntimeError(msg)
 
         for url in urls:
             try:
@@ -221,7 +228,8 @@ class SupabaseAdapter:
     ) -> None:
         """Update or create source information"""
         if not self.client:
-            raise RuntimeError("Database not initialized. Call initialize() first.")
+            msg = "Database not initialized. Call initialize() first."
+            raise RuntimeError(msg)
 
         try:
             # Try to update existing source
@@ -257,7 +265,8 @@ class SupabaseAdapter:
     async def get_documents_by_url(self, url: str) -> list[dict[str, Any]]:
         """Get all document chunks for a specific URL"""
         if not self.client:
-            raise RuntimeError("Database not initialized. Call initialize() first.")
+            msg = "Database not initialized. Call initialize() first."
+            raise RuntimeError(msg)
 
         try:
             result = (
@@ -276,7 +285,8 @@ class SupabaseAdapter:
     ) -> list[dict[str, Any]]:
         """Search for documents containing a keyword"""
         if not self.client:
-            raise RuntimeError("Database not initialized. Call initialize() first.")
+            msg = "Database not initialized. Call initialize() first."
+            raise RuntimeError(msg)
 
         try:
             query = (
@@ -302,7 +312,8 @@ class SupabaseAdapter:
     ) -> list[dict[str, Any]]:
         """Search for code examples containing a keyword"""
         if not self.client:
-            raise RuntimeError("Database not initialized. Call initialize() first.")
+            msg = "Database not initialized. Call initialize() first."
+            raise RuntimeError(msg)
 
         try:
             query = (
@@ -323,7 +334,8 @@ class SupabaseAdapter:
     async def get_sources(self) -> list[dict[str, Any]]:
         """Get all available sources"""
         if not self.client:
-            raise RuntimeError("Database not initialized. Call initialize() first.")
+            msg = "Database not initialized. Call initialize() first."
+            raise RuntimeError(msg)
 
         try:
             result = (

@@ -42,14 +42,14 @@ except ImportError:
             """Stub implementation when create_embedding is not available."""
             import warnings
 
-            warnings.warn("create_embedding function not available, using stub")
+            warnings.warn("create_embedding function not available, using stub", stacklevel=2)
             return [0.0] * 1536
 
         def create_embeddings_batch(texts: list[str]) -> list[list[float]]:
             """Stub implementation when create_embeddings_batch is not available."""
             import warnings
 
-            warnings.warn("create_embeddings_batch function not available, using stub")
+            warnings.warn("create_embeddings_batch function not available, using stub", stacklevel=2)
             return [[0.0] * 1536 for _ in texts]
 
         async def add_documents_to_database(*args, **kwargs):
@@ -57,28 +57,28 @@ except ImportError:
             import warnings
 
             warnings.warn(
-                "add_documents_to_database function not available, using stub"
+                "add_documents_to_database function not available, using stub", stacklevel=2,
             )
 
 
 __all__ = [
-    # Validation
-    "validate_neo4j_connection",
-    "validate_script_path",
-    "validate_github_url",
-    # Text processing
-    "smart_chunk_markdown",
-    "extract_section_info",
-    "process_code_example",
-    # URL helpers
-    "is_sitemap",
-    "is_txt",
-    "parse_sitemap",
-    "normalize_url",
-    # Reranking
-    "rerank_results",
+    "add_documents_to_database",
     # Embedding and database
     "create_embedding",
     "create_embeddings_batch",
-    "add_documents_to_database",
+    "extract_section_info",
+    # URL helpers
+    "is_sitemap",
+    "is_txt",
+    "normalize_url",
+    "parse_sitemap",
+    "process_code_example",
+    # Reranking
+    "rerank_results",
+    # Text processing
+    "smart_chunk_markdown",
+    "validate_github_url",
+    # Validation
+    "validate_neo4j_connection",
+    "validate_script_path",
 ]

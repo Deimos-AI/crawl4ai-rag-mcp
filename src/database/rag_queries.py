@@ -53,7 +53,7 @@ async def get_available_sources(database_client: Any) -> str:
             indent=2,
         )
     except Exception as e:
-        logger.error(f"Error in get_available_sources: {e}")
+        logger.exception(f"Error in get_available_sources: {e}")
         return json.dumps({"success": False, "error": str(e)}, indent=2)
 
 
@@ -130,7 +130,7 @@ async def perform_rag_query(
             indent=2,
         )
     except Exception as e:
-        logger.error(f"Error in perform_rag_query: {e}")
+        logger.exception(f"Error in perform_rag_query: {e}")
         return json.dumps({"success": False, "query": query, "error": str(e)}, indent=2)
 
 
@@ -206,5 +206,5 @@ async def search_code_examples(
             indent=2,
         )
     except Exception as e:
-        logger.error(f"Error in search_code_examples: {e}")
+        logger.exception(f"Error in search_code_examples: {e}")
         return json.dumps({"success": False, "query": query, "error": str(e)}, indent=2)

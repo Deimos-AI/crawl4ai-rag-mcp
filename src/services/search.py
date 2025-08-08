@@ -39,8 +39,9 @@ async def search_and_process(
         JSON string with results
     """
     if not settings.searxng_url:
+        msg = "SearXNG URL not configured. Please set SEARXNG_URL in your environment."
         raise MCPToolError(
-            "SearXNG URL not configured. Please set SEARXNG_URL in your environment."
+            msg,
         )
 
     try:
@@ -53,7 +54,7 @@ async def search_and_process(
                     "success": False,
                     "message": "No search results found",
                     "results": [],
-                }
+                },
             )
 
         # Extract URLs from search results
@@ -97,12 +98,13 @@ async def search_and_process(
                 "query": query,
                 "total_results": len(combined_results),
                 "results": combined_results,
-            }
+            },
         )
 
     except Exception as e:
-        logger.error(f"Error in search_and_process: {e}")
-        raise MCPToolError(f"Search processing failed: {e!s}")
+        logger.exception(f"Error in search_and_process: {e}")
+        msg = f"Search processing failed: {e!s}"
+        raise MCPToolError(msg)
 
 
 async def _search_searxng(query: str, num_results: int) -> list[dict]:
@@ -134,18 +136,17 @@ async def _search_searxng(query: str, num_results: int) -> list[dict]:
     }
 
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                search_url,
-                params=params,
-                headers=headers,
-                timeout=aiohttp.ClientTimeout(total=settings.searxng_timeout),
-            ) as response:
-                if response.status != 200:
-                    logger.error(f"SearXNG returned status {response.status}")
-                    return []
+        async with aiohttp.ClientSession() as session, session.get(
+            search_url,
+            params=params,
+            headers=headers,
+            timeout=aiohttp.ClientTimeout(total=settings.searxng_timeout),
+        ) as response:
+            if response.status != 200:
+                logger.error(f"SearXNG returned status {response.status}")
+                return []
 
-                html = await response.text()
+            html = await response.text()
 
         # Parse HTML results
         soup = BeautifulSoup(html, "html.parser")
@@ -173,5 +174,5 @@ async def _search_searxng(query: str, num_results: int) -> list[dict]:
         return results
 
     except Exception as e:
-        logger.error(f"SearXNG search error: {e}")
+        logger.exception(f"SearXNG search error: {e}")
         return []

@@ -169,7 +169,7 @@ class BatchProcessor:
         return results
 
     async def _process_with_semaphore(
-        self, processor_func: Callable, item: Any, *args, **kwargs
+        self, processor_func: Callable, item: Any, *args, **kwargs,
     ):
         """Process an item with semaphore control."""
         async with self._semaphore:
@@ -215,7 +215,8 @@ class CircuitBreaker:
 
         # If circuit is open, fail fast
         if self.state == "open":
-            raise Exception("Circuit breaker is OPEN")
+            msg = "Circuit breaker is OPEN"
+            raise Exception(msg)
 
         try:
             result = await func(*args, **kwargs)
@@ -225,9 +226,9 @@ class CircuitBreaker:
             self.failure_count = 0
             return result
 
-        except self.expected_exception as e:
+        except self.expected_exception:
             self._record_failure()
-            raise e
+            raise
 
     def _record_failure(self):
         """Record a failure and potentially open the circuit."""
@@ -270,14 +271,14 @@ def create_cache_key(*args, **kwargs) -> str:
 
     # Add positional arguments
     for arg in args:
-        if isinstance(arg, (str, int, float, bool)):
+        if isinstance(arg, str | int | float | bool):
             key_parts.append(str(arg))
         else:
             key_parts.append(str(hash(str(arg))))
 
     # Add keyword arguments (sorted for consistency)
     for key, value in sorted(kwargs.items()):
-        if isinstance(value, (str, int, float, bool)):
+        if isinstance(value, str | int | float | bool):
             key_parts.append(f"{key}={value}")
         else:
             key_parts.append(f"{key}={hash(str(value))}")
@@ -308,7 +309,7 @@ def performance_monitor(func):
 
         except Exception as e:
             execution_time = time.time() - start_time
-            logger.error(f"{function_name} failed after {execution_time:.3f}s: {e}")
+            logger.exception(f"{function_name} failed after {execution_time:.3f}s: {e}")
             raise
 
     return wrapper
@@ -518,7 +519,7 @@ def get_performance_optimizer() -> PerformanceOptimizer:
 
 
 async def validate_integration_health(
-    database_client=None, neo4j_driver=None
+    database_client=None, neo4j_driver=None,
 ) -> dict[str, Any]:
     """
     Quick health check for the integration layer.

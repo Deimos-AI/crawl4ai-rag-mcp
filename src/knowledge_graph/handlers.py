@@ -55,13 +55,13 @@ async def handle_explore_command(session: Any, command: str, repo_name: str) -> 
     OPTIONAL MATCH (c)-[:HAS_METHOD]->(m:Method)
     OPTIONAL MATCH (f)-[:DEFINES]->(func:Function)
     OPTIONAL MATCH (c)-[:HAS_ATTRIBUTE]->(a:Attribute)
-    WITH r, 
+    WITH r,
          COLLECT(DISTINCT f) as files,
          COLLECT(DISTINCT c) as classes,
          COLLECT(DISTINCT m) as methods,
          COLLECT(DISTINCT func) as functions,
          COLLECT(DISTINCT a) as attributes
-    RETURN 
+    RETURN
         SIZE([f IN files WHERE f IS NOT NULL]) as file_count,
         SIZE([c IN classes WHERE c IS NOT NULL]) as class_count,
         SIZE([m IN methods WHERE m IS NOT NULL]) as method_count,
@@ -108,7 +108,7 @@ async def handle_explore_command(session: Any, command: str, repo_name: str) -> 
 
 
 async def handle_classes_command(
-    session: Any, command: str, repo_name: str | None = None
+    session: Any, command: str, repo_name: str | None = None,
 ) -> str:
     """Handle 'classes [repo]' command - list classes"""
     limit = 20
@@ -231,7 +231,7 @@ async def handle_method_command(
         WHERE (c.name = $class_name OR c.full_name = $class_name)
           AND m.name = $method_name
         RETURN c.name as class_name, c.full_name as class_full_name,
-               m.name as method_name, m.params_list as params_list, 
+               m.name as method_name, m.params_list as params_list,
                m.params_detailed as params_detailed, m.return_type as return_type, m.args as args
         """
         result = await session.run(
@@ -244,7 +244,7 @@ async def handle_method_command(
         MATCH (c:Class)-[:HAS_METHOD]->(m:Method)
         WHERE m.name = $method_name
         RETURN c.name as class_name, c.full_name as class_full_name,
-               m.name as method_name, m.params_list as params_list, 
+               m.name as method_name, m.params_list as params_list,
                m.params_detailed as params_detailed, m.return_type as return_type, m.args as args
         LIMIT 20
         """
