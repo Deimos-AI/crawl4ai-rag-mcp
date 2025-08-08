@@ -18,7 +18,7 @@ from core.stdout_utils import SuppressStdout
 # Import add_documents_to_database from utils package
 from utils import add_documents_to_database
 from utils.text_processing import smart_chunk_markdown
-from utils.url_helpers import normalize_url
+from utils.url_helpers import extract_domain_from_url, normalize_url
 
 
 async def crawl_markdown_file(
@@ -372,6 +372,9 @@ async def process_urls_for_mcp(
                     )
                     continue
 
+                # Extract source from URL for proper metadata storage
+                source_id = extract_domain_from_url(result["url"])
+
                 # Prepare data for database storage
                 urls = [result["url"]] * len(chunks)
                 chunk_numbers = list(range(len(chunks)))
@@ -380,6 +383,7 @@ async def process_urls_for_mcp(
                     {"url": result["url"], "chunk": i} for i in range(len(chunks))
                 ]
                 url_to_full_document = {result["url"]: result["markdown"]}
+                source_ids = [source_id] * len(chunks) if source_id else None
 
                 # Store in database
                 await add_documents_to_database(
@@ -390,6 +394,7 @@ async def process_urls_for_mcp(
                     metadatas=metadatas,
                     url_to_full_document=url_to_full_document,
                     batch_size=batch_size,
+                    source_ids=source_ids,
                 )
 
                 stored_results.append(
@@ -397,6 +402,7 @@ async def process_urls_for_mcp(
                         "url": result["url"],
                         "success": True,
                         "chunks_stored": len(chunks),
+                        "source_id": source_id,
                     },
                 )
             except Exception as e:

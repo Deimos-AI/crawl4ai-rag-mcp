@@ -2,6 +2,66 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2025-08-08] - Critical Source Filtering Bug Fix
+
+### Fixed
+
+- **Source filtering in RAG queries completely broken**:
+  - Fixed relative import error in `src/utils/embeddings.py` that was using `from ..core.logging` instead of `from core.logging`
+  - This error prevented `extract_domain_from_url` from being called, causing all source metadata to be stored as null
+  - Source filtering now works correctly for RAG queries and code searches
+  - Affected functions: `perform_rag_query`, `search_code_examples`, all search operations with source filters
+
+## [2025-08-08] - Modular Utility Functions Restoration
+
+### Added
+
+- **New utility modules** for better code organization:
+  - `src/utils/code_analysis.py` - Functions for extracting and analyzing code blocks from markdown
+  - `src/utils/summarization.py` - AI-powered content summarization utilities
+  
+- **Restored missing functions** from pre-refactoring backup:
+  - `extract_code_blocks()` - Extract code blocks with language detection from markdown
+  - `generate_code_example_summary()` - Generate AI summaries of code examples with context
+  - `extract_source_summary()` - Create summaries of crawled sources using OpenAI
+  - `generate_contextual_embedding()` - Generate contextual representations for chunks
+  - `process_chunk_with_context()` - Process chunks with context for embeddings
+  - `process_code_example()` - Wrapper for concurrent code processing
+
+### Fixed
+
+- **Critical security issues**:
+  - Replaced deprecated `openai.api_key` global assignment with secure client instantiation pattern
+  - Fixed potential information disclosure in error messages by using structured logging
+  - Removed hardcoded embedding dimensions (1536) - now dynamically determined by model
+  
+- **Code quality improvements**:
+  - Eliminated function duplication between `text_processing.py` and `code_analysis.py`
+  - Replaced all print statements with proper logging using centralized logger
+  - Fixed stub implementations that were causing silent failures
+  
+- **Import structure**:
+  - Updated `src/utils/__init__.py` to properly export all utility functions
+  - Fixed circular import potential in module structure
+  - Ensured backward compatibility for all existing imports
+
+### Technical Details
+
+- **OpenAI Integration**: All API calls now use the modern `openai.OpenAI()` client pattern
+- **Error Handling**: Comprehensive retry logic with exponential backoff for API calls
+- **Model Support**: Dynamic embedding dimensions for multiple models:
+  - `text-embedding-3-small`: 1536 dimensions
+  - `text-embedding-3-large`: 3072 dimensions
+  - `text-embedding-ada-002`: 1536 dimensions
+- **Logging**: Migrated from stderr prints to structured logging via `core.logging.logger`
+
+### Impact
+
+- Restores functionality lost during the monolithic `src/utils.py` refactoring
+- Fixes 20+ test failures related to missing utility functions
+- Improves security posture by eliminating deprecated API patterns
+- Maintains clean modular architecture with single responsibility principle
+
 ## [2025-08-07] - QdrantAdapter Parameter Name Consistency Fix
 
 ### Fixed

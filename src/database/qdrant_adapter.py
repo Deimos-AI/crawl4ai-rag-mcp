@@ -146,15 +146,23 @@ class QdrantAdapter:
             ):
                 point_id = self._generate_point_id(url, chunk_num)
 
-                # Prepare payload
+                # Extract source_id from URL if not provided - same logic as Supabase adapter
+                if not source_id:
+                    from urllib.parse import urlparse
+                    parsed_url = urlparse(url)
+                    source_id = parsed_url.netloc or parsed_url.path
+                    # Remove 'www.' prefix if present for consistency
+                    if source_id and source_id.startswith('www.'):
+                        source_id = source_id[4:]
+
+                # Prepare payload - always include source_id
                 payload = {
                     "url": url,
                     "chunk_number": chunk_num,
                     "content": content,
                     "metadata": metadata or {},
+                    "source_id": source_id,  # Always include source_id
                 }
-                if source_id:
-                    payload["source_id"] = source_id
 
                 point = PointStruct(
                     id=point_id,
@@ -199,7 +207,7 @@ class QdrantAdapter:
         if source_filter:
             filter_conditions.append(
                 FieldCondition(
-                    key="metadata.source",
+                    key="source_id",  # Changed from metadata.source to source_id
                     match=MatchValue(value=source_filter),
                 ),
             )
@@ -251,7 +259,7 @@ class QdrantAdapter:
         if source_filter:
             filter_conditions.append(
                 FieldCondition(
-                    key="metadata.source",
+                    key="source_id",  # Changed from metadata.source to source_id
                     match=MatchValue(value=source_filter),
                 ),
             )
@@ -581,7 +589,7 @@ class QdrantAdapter:
         if source_filter:
             filter_conditions.append(
                 FieldCondition(
-                    key="metadata.source",
+                    key="source_id",  # Changed from metadata.source to source_id
                     match=MatchValue(value=source_filter),
                 ),
             )
@@ -671,7 +679,7 @@ class QdrantAdapter:
         if source_filter:
             filter_conditions.append(
                 FieldCondition(
-                    key="metadata.source",
+                    key="source_id",  # Changed from metadata.source to source_id
                     match=MatchValue(value=source_filter),
                 ),
             )

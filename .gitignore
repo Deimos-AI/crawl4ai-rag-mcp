@@ -24,3 +24,7 @@ analysis_scripts/validation_results/*
 !analysis_scripts/user_scripts/.gitkeep
 !analysis_scripts/test_scripts/.gitkeep
 !analysis_scripts/validation_results/.gitkeep
+
+# VS Code workspace files
+*.code-workspace
+*.code-workspace.bak

@@ -83,9 +83,9 @@ async def perform_rag_query(
         use_hybrid_search = os.getenv("USE_HYBRID_SEARCH", "false") == "true"
 
         # Prepare filter if source is provided and not empty
+        # Note: We pass source directly as source_filter, not as filter_metadata
         filter_metadata = None
-        if source and source.strip():
-            filter_metadata = {"source": source}
+        source_filter = source.strip() if source and source.strip() else None
 
         if use_hybrid_search:
             # Use hybrid search (vector + keyword)
@@ -94,6 +94,7 @@ async def perform_rag_query(
                 query,
                 match_count=match_count,
                 filter_metadata=filter_metadata,
+                source_filter=source_filter,  # Pass source_filter separately
             )
         else:
             # Use standard vector search
@@ -102,6 +103,7 @@ async def perform_rag_query(
                 query,
                 match_count=match_count,
                 filter_metadata=filter_metadata,
+                source_filter=source_filter,  # Pass source_filter separately
             )
 
         # Format results
@@ -110,7 +112,7 @@ async def perform_rag_query(
             formatted_results.append(
                 {
                     "content": result.get("content"),
-                    "source": result.get("source"),
+                    "source": result.get("source_id"),  # Changed from "source" to "source_id"
                     "url": result.get("url"),
                     "title": result.get("title"),
                     "chunk_index": result.get("chunk_index"),

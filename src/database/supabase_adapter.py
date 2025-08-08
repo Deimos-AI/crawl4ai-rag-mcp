@@ -45,12 +45,16 @@ class SupabaseAdapter:
         contents: list[str],
         metadatas: list[dict[str, Any]],
         embeddings: list[list[float]],
-        source_ids: list[str],
+        source_ids: list[str] | None = None,
     ) -> None:
         """Add documents to Supabase with batch processing"""
         if not self.client:
             msg = "Database not initialized. Call initialize() first."
             raise RuntimeError(msg)
+
+        # Handle None source_ids
+        if source_ids is None:
+            source_ids = [None] * len(urls)
 
         # Get unique URLs to delete existing records
         unique_urls = list(set(urls))

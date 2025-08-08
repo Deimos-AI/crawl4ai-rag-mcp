@@ -141,3 +141,40 @@ def clean_url(url: str) -> str:
         return ""
 
     return cleaned
+
+
+def extract_domain_from_url(url: str) -> str | None:
+    """
+    Extract domain from URL for use as source identifier.
+    
+    Examples:
+        - "https://example.com/path" -> "example.com"
+        - "https://www.example.com/path" -> "example.com"
+        - "https://subdomain.example.com/path" -> "subdomain.example.com"
+        - Invalid URL -> None
+    
+    Args:
+        url: URL to extract domain from
+        
+    Returns:
+        Domain string or None if extraction fails
+    """
+    if not url:
+        return None
+        
+    try:
+        from urllib.parse import urlparse
+        
+        parsed = urlparse(url)
+        if not parsed.netloc:
+            return None
+            
+        domain = parsed.netloc.lower()
+        
+        # Remove 'www.' prefix if present
+        if domain.startswith('www.'):
+            domain = domain[4:]
+            
+        return domain
+    except Exception:
+        return None

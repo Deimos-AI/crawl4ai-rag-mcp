@@ -3,19 +3,6 @@
 import re
 from typing import Any
 
-# Import from utils if available
-try:
-    from utils import generate_code_example_summary
-except ImportError:
-    # Provide a simple fallback implementation
-    def generate_code_example_summary(
-        code: str, context_before: str = "", context_after: str = "",
-    ) -> str:
-        """Simple fallback for code example summary generation."""
-        lines = code.strip().split("\n")
-        first_line = lines[0] if lines else ""
-        return f"Code example: {first_line[:100]}..."
-
 
 def smart_chunk_markdown(text: str, chunk_size: int = 5000) -> list[str]:
     """Split text into chunks, respecting code blocks and paragraphs."""
@@ -87,16 +74,3 @@ def extract_section_info(chunk: str) -> dict[str, Any]:
     }
 
 
-def process_code_example(args):
-    """
-    Process a single code example to generate its summary.
-    This function is designed to be used with concurrent.futures.
-
-    Args:
-        args: Tuple containing (code, context_before, context_after)
-
-    Returns:
-        The generated summary
-    """
-    code, context_before, context_after = args
-    return generate_code_example_summary(code, context_before, context_after)

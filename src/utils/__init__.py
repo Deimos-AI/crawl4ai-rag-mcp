@@ -3,82 +3,60 @@
 from .reranking import rerank_results
 from .text_processing import (
     extract_section_info,
-    process_code_example,
     smart_chunk_markdown,
 )
-from .url_helpers import is_sitemap, is_txt, normalize_url, parse_sitemap
+from .url_helpers import extract_domain_from_url, is_sitemap, is_txt, normalize_url, parse_sitemap
 from .validation import (
     validate_github_url,
     validate_neo4j_connection,
     validate_script_path,
 )
 
-# Import functions from parent utils.py module
-try:
-    # Import from parent directory's utils.py
-    from ..utils import (
-        add_documents_to_database,
-        create_embedding,
-        create_embeddings_batch,
-    )
-except ImportError:
-    try:
-        # Fallback: try direct import if we're running from src
-        import sys
-        from pathlib import Path
+# Import embedding functions from local embeddings module
+from .embeddings import (
+    add_documents_to_database,
+    create_embedding,
+    create_embeddings_batch,
+    generate_contextual_embedding,
+    process_chunk_with_context,
+)
 
-        src_dir = Path(__file__).parent.parent
-        sys.path.insert(0, str(src_dir))
-        from utils import (
-            add_documents_to_database,
-            create_embedding,
-            create_embeddings_batch,
-        )
+# Import code analysis functions
+from .code_analysis import (
+    extract_code_blocks,
+    generate_code_example_summary,
+)
 
-        sys.path.remove(str(src_dir))
-    except ImportError:
-        # If import fails, create stubs
-        def create_embedding(text: str) -> list[float]:
-            """Stub implementation when create_embedding is not available."""
-            import warnings
-
-            warnings.warn("create_embedding function not available, using stub", stacklevel=2)
-            return [0.0] * 1536
-
-        def create_embeddings_batch(texts: list[str]) -> list[list[float]]:
-            """Stub implementation when create_embeddings_batch is not available."""
-            import warnings
-
-            warnings.warn("create_embeddings_batch function not available, using stub", stacklevel=2)
-            return [[0.0] * 1536 for _ in texts]
-
-        async def add_documents_to_database(*args, **kwargs):
-            """Stub implementation when add_documents_to_database is not available."""
-            import warnings
-
-            warnings.warn(
-                "add_documents_to_database function not available, using stub", stacklevel=2,
-            )
+# Import summarization functions
+from .summarization import extract_source_summary
 
 
 __all__ = [
+    # Database and embedding functions
     "add_documents_to_database",
-    # Embedding and database
     "create_embedding",
     "create_embeddings_batch",
+    "generate_contextual_embedding",
+    "process_chunk_with_context",
+    # Code analysis functions
+    "extract_code_blocks",
+    "generate_code_example_summary",
+    "process_code_example",
+    # Text processing functions
     "extract_section_info",
+    "smart_chunk_markdown",
+    # Summarization functions
+    "extract_source_summary",
     # URL helpers
+    "extract_domain_from_url",
     "is_sitemap",
     "is_txt",
     "normalize_url",
     "parse_sitemap",
-    "process_code_example",
     # Reranking
     "rerank_results",
-    # Text processing
-    "smart_chunk_markdown",
-    "validate_github_url",
     # Validation
+    "validate_github_url",
     "validate_neo4j_connection",
     "validate_script_path",
 ]
