@@ -5,8 +5,8 @@ import sys
 
 import openai
 
-# Load OpenAI API key
-openai.api_key = os.getenv("OPENAI_API_KEY")
+# Create OpenAI client instance
+client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 
 def extract_source_summary(source_id: str, content: str, max_length: int = 500) -> str:
@@ -45,7 +45,7 @@ The above content is from the documentation for '{source_id}'. Please provide a 
 
     try:
         # Call the OpenAI API to generate the summary
-        response = openai.chat.completions.create(
+        response = client.chat.completions.create(
             model=model_choice,
             messages=[
                 {

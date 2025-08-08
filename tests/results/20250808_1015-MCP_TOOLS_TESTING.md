@@ -7,7 +7,9 @@
 **Tester**: Claude Code QA Agent
 
 ## Service Health Status (Pre-test)
+
 ✅ All services running and healthy at 10:15:12 BST:
+
 - mcp-crawl4ai-dev: healthy
 - qdrant-dev: healthy  
 - neo4j-dev: healthy

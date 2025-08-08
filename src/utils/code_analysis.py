@@ -6,10 +6,6 @@ from typing import Any
 
 import openai
 
-# Load OpenAI API key
-openai.api_key = os.getenv("OPENAI_API_KEY")
-
-
 def extract_code_blocks(
     markdown_content: str, min_length: int = 1000,
 ) -> list[dict[str, Any]]:
@@ -121,7 +117,10 @@ Based on the code example and its surrounding context, provide a concise summary
 """
 
     try:
-        response = openai.chat.completions.create(
+        # Create OpenAI client instance
+        client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        
+        response = client.chat.completions.create(
             model=model_choice,
             messages=[
                 {

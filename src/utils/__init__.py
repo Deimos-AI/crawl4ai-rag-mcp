@@ -15,16 +15,20 @@ from .validation import (
 # Import embedding functions from local embeddings module
 from .embeddings import (
     add_documents_to_database,
+    add_code_examples_to_database,
     create_embedding,
     create_embeddings_batch,
     generate_contextual_embedding,
     process_chunk_with_context,
+    search_documents,
+    search_code_examples,
 )
 
 # Import code analysis functions
 from .code_analysis import (
     extract_code_blocks,
     generate_code_example_summary,
+    process_code_example,
 )
 
 # Import summarization functions
@@ -34,10 +38,13 @@ from .summarization import extract_source_summary
 __all__ = [
     # Database and embedding functions
     "add_documents_to_database",
+    "add_code_examples_to_database",
     "create_embedding",
     "create_embeddings_batch",
     "generate_contextual_embedding",
     "process_chunk_with_context",
+    "search_documents",
+    "search_code_examples",
     # Code analysis functions
     "extract_code_blocks",
     "generate_code_example_summary",

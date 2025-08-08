@@ -9,6 +9,8 @@ import openai
 
 
 
+from concurrent.futures import ThreadPoolExecutor
+
 def _get_embedding_dimensions(model: str) -> int:
     """
     Get the embedding dimensions for a given OpenAI model.
@@ -148,17 +150,58 @@ def generate_contextual_embedding(
     """
     from core.logging import logger
     
-    model_choice = os.getenv("MODEL_CHOICE", "gpt-4o-mini")
+    # Use environment variables for configuration with validation
+    model_choice = os.getenv("CONTEXTUAL_EMBEDDING_MODEL", "gpt-4o-mini")
+    
+    # Validate and set max_tokens (1-4096 range)
+    try:
+        max_tokens = int(os.getenv("CONTEXTUAL_EMBEDDING_MAX_TOKENS", "200"))
+        if not (1 <= max_tokens <= 4096):
+            logger.warning(f"CONTEXTUAL_EMBEDDING_MAX_TOKENS ({max_tokens}) out of range 1-4096, using default 200")
+            max_tokens = 200
+    except ValueError:
+        logger.warning("CONTEXTUAL_EMBEDDING_MAX_TOKENS must be an integer, using default 200")
+        max_tokens = 200
+    
+    # Validate and set temperature (0.0-2.0 range)
+    try:
+        temperature = float(os.getenv("CONTEXTUAL_EMBEDDING_TEMPERATURE", "0.3"))
+        if not (0.0 <= temperature <= 2.0):
+            logger.warning(f"CONTEXTUAL_EMBEDDING_TEMPERATURE ({temperature}) out of range 0.0-2.0, using default 0.3")
+            temperature = 0.3
+    except ValueError:
+        logger.warning("CONTEXTUAL_EMBEDDING_TEMPERATURE must be a number, using default 0.3")
+        temperature = 0.3
+    
+    # Validate and set max_doc_chars (positive integer)
+    try:
+        max_doc_chars = int(os.getenv("CONTEXTUAL_EMBEDDING_MAX_DOC_CHARS", "25000"))
+        if max_doc_chars <= 0:
+            logger.warning(f"CONTEXTUAL_EMBEDDING_MAX_DOC_CHARS ({max_doc_chars}) must be positive, using default 25000")
+            max_doc_chars = 25000
+    except ValueError:
+        logger.warning("CONTEXTUAL_EMBEDDING_MAX_DOC_CHARS must be a positive integer, using default 25000")
+        max_doc_chars = 25000
 
     try:
+        # Truncate full document if it's too long
+        truncated_document = full_document[:max_doc_chars]
+        
+        # Create position info if available
+        position_info = ""
+        if chunk_index >= 0 and total_chunks > 1:
+            position_info = f" (chunk {chunk_index + 1} of {total_chunks})"
+
         # Create the prompt for generating contextual information
-        prompt = f"""<document> 
-{full_document[:25000]} 
+        prompt = f"""<document>
+{truncated_document}
 </document>
-Here is the chunk we want to situate within the whole document 
-<chunk> 
+
+Here is the chunk{position_info} we want to situate within the whole document:
+<chunk>
 {chunk}
-</chunk> 
+</chunk>
+
 Please give a short succinct context to situate this chunk within the overall document for the purposes of improving search retrieval of the chunk. Answer only with the succinct context and nothing else."""
 
         # Create OpenAI client instance
@@ -174,8 +217,8 @@ Please give a short succinct context to situate this chunk within the overall do
                 },
                 {"role": "user", "content": prompt},
             ],
-            temperature=0.3,
-            max_tokens=200,
+            temperature=temperature,
+            max_tokens=max_tokens,
         )
 
         # Extract the generated context
@@ -200,15 +243,15 @@ def process_chunk_with_context(args) -> tuple[str, list[float]]:
     This function is designed to be used with concurrent.futures.
 
     Args:
-        args: Tuple containing (chunk, full_document)
+        args: Tuple containing (chunk, full_document, chunk_index, total_chunks)
 
     Returns:
         Tuple containing:
         - The contextual text that situates the chunk within the document
         - The embedding for the contextual text
     """
-    chunk, full_document = args
-    contextual_text = generate_contextual_embedding(chunk, full_document)
+    chunk, full_document, chunk_index, total_chunks = args
+    contextual_text = generate_contextual_embedding(chunk, full_document, chunk_index, total_chunks)
     embedding = create_embedding(contextual_text)
     return contextual_text, embedding
 
@@ -240,23 +283,73 @@ async def add_documents_to_database(
         source_ids: Optional list of source IDs
     """
     from core.logging import logger
+    from concurrent.futures import as_completed
     
     # Check if we should use contextual embeddings
     use_contextual_embeddings = (
         os.getenv("USE_CONTEXTUAL_EMBEDDINGS", "false").lower() == "true"
     )
     
-    if use_contextual_embeddings:
-        logger.info(
-            "Contextual embeddings enabled but not implemented yet, using standard embeddings"
-        )
-    
-    # Generate embeddings for all contents in batches
-    embeddings = []
-    for i in range(0, len(contents), batch_size):
-        batch_texts = contents[i:i + batch_size]
-        batch_embeddings = create_embeddings_batch(batch_texts)
-        embeddings.extend(batch_embeddings)
+    if use_contextual_embeddings and url_to_full_document:
+        logger.info("Using contextual embeddings for enhanced retrieval")
+        
+        # Use ThreadPoolExecutor for parallel processing with individual error handling
+        with ThreadPoolExecutor(max_workers=int(os.getenv("CONTEXTUAL_EMBEDDING_MAX_WORKERS", "10"))) as executor:
+            # Submit tasks individually for better error handling
+            future_to_index = {}
+            total_chunks = len(contents)
+            
+            for i, (url, content) in enumerate(zip(urls, contents)):
+                full_document = url_to_full_document.get(url, "")
+                args = (content, full_document, i, total_chunks)
+                future = executor.submit(process_chunk_with_context, args)
+                future_to_index[future] = i
+            
+            # Process results as they complete, with individual error handling
+            contextual_contents = contents.copy()  # Start with original contents
+            embeddings = [None] * len(contents)  # Pre-allocate embeddings list
+            successful_contextual_count = 0
+            failed_contextual_count = 0
+            
+            try:
+                for future in as_completed(future_to_index.keys()):
+                    index = future_to_index[future]
+                    try:
+                        contextual_text, embedding = future.result()
+                        contextual_contents[index] = contextual_text
+                        embeddings[index] = embedding
+                        successful_contextual_count += 1
+                    except Exception as e:
+                        logger.warning(f"Failed to generate contextual embedding for chunk {index}: {e}. Using original content.")
+                        # Keep original content and generate standard embedding
+                        embedding = create_embedding(contents[index])
+                        embeddings[index] = embedding
+                        failed_contextual_count += 1
+                
+                # Update contents to use contextual versions where successful
+                contents = contextual_contents
+                
+                # Add contextual embedding flag to metadata for successful ones
+                for i, metadata in enumerate(metadatas):
+                    metadata["contextual_embedding"] = (embeddings[i] is not None and i < successful_contextual_count)
+                
+                logger.info(f"Contextual embedding processing: {successful_contextual_count} successful, {failed_contextual_count} failed")
+                
+            except Exception as e:
+                logger.error(f"Error during contextual embedding processing: {e}. Falling back to standard embeddings.")
+                # Fall back to standard embedding generation for all
+                embeddings = []
+                for i in range(0, len(contents), batch_size):
+                    batch_texts = contents[i:i + batch_size]
+                    batch_embeddings = create_embeddings_batch(batch_texts)
+                    embeddings.extend(batch_embeddings)
+    else:
+        # Generate embeddings for all contents in batches (standard approach)
+        embeddings = []
+        for i in range(0, len(contents), batch_size):
+            batch_texts = contents[i:i + batch_size]
+            batch_embeddings = create_embeddings_batch(batch_texts)
+            embeddings.extend(batch_embeddings)
     
     # Store documents with embeddings using the provided database adapter
     await database.add_documents(
@@ -277,6 +370,111 @@ async def add_documents_to_database(
             url_to_full_document=url_to_full_document,
             contents=contents,
         )
+
+async def search_documents(
+    database: Any,  # VectorDatabase instance
+    query: str,
+    match_count: int = 10,
+    filter_metadata: dict[str, Any] | None = None,
+    source_filter: str | None = None,
+) -> list[dict[str, Any]]:
+    """
+    Search for documents using vector similarity.
+    
+    Args:
+        database: VectorDatabase instance (the database adapter)
+        query: Search query text
+        match_count: Maximum number of results to return
+        filter_metadata: Optional metadata filter
+        source_filter: Optional source ID filter
+    
+    Returns:
+        List of documents with similarity scores
+    """
+    # Generate embedding for the query
+    query_embedding = create_embedding(query)
+    
+    # Search using the database adapter
+    return await database.search_documents(
+        query_embedding=query_embedding,
+        match_count=match_count,
+        filter_metadata=filter_metadata,
+        source_filter=source_filter,
+    )
+
+
+async def add_code_examples_to_database(
+    database: Any,  # VectorDatabase instance
+    urls: list[str],
+    chunk_numbers: list[int],
+    code_examples: list[str],
+    summaries: list[str],
+    metadatas: list[dict[str, Any]],
+    batch_size: int = 20,
+) -> None:
+    """
+    Add code examples to the database with embeddings.
+    
+    Args:
+        database: VectorDatabase instance (the database adapter)
+        urls: List of URLs
+        chunk_numbers: List of chunk numbers
+        code_examples: List of code examples
+        summaries: List of summaries for the code examples
+        metadatas: List of metadata dictionaries
+        batch_size: Size of each batch for insertion
+    """
+    if not urls:
+        return  # Early return for empty lists
+    
+    # Generate embeddings for summaries in batches
+    embeddings = []
+    for i in range(0, len(summaries), batch_size):
+        batch_texts = summaries[i:i + batch_size]
+        batch_embeddings = create_embeddings_batch(batch_texts)
+        embeddings.extend(batch_embeddings)
+    
+    # Store code examples with embeddings using the database adapter
+    await database.add_code_examples(
+        urls=urls,
+        chunk_numbers=chunk_numbers,
+        code_examples=code_examples,
+        summaries=summaries,
+        metadatas=metadatas,
+        embeddings=embeddings,
+    )
+
+
+async def search_code_examples(
+    database: Any,  # VectorDatabase instance
+    query: str,
+    match_count: int = 5,
+    source_filter: str | None = None,
+) -> list[dict[str, Any]]:
+    """
+    Search for code examples using vector similarity with enhanced query.
+    
+    Args:
+        database: VectorDatabase instance (the database adapter)
+        query: Search query text
+        match_count: Maximum number of results to return
+        source_filter: Optional source ID filter
+    
+    Returns:
+        List of code examples with similarity scores
+    """
+    # Enhance the query for code search
+    enhanced_query = f"Code example for {query}"
+    
+    # Generate embedding for the enhanced query
+    query_embedding = create_embedding(enhanced_query)
+    
+    # Search using the database adapter
+    return await database.search_code_examples(
+        query_embedding=query_embedding,
+        match_count=match_count,
+        source_filter=source_filter,
+    )
 
 
 async def _add_web_sources_to_database(

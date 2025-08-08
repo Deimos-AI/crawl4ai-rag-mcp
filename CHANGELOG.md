@@ -2,6 +2,61 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2025-08-08] - Fixed Module Import SyntaxError
+
+### Fixed
+
+- **SyntaxError in `src/utils/__init__.py`**:
+  - Fixed malformed `__all__` list that had invalid syntax with multiple assignment attempts (`] = [` appearing multiple times on lines 65 and 96)
+  - Cleaned up the `__all__` list to have proper single-assignment syntax
+  - Added missing imports for functions that were listed in `__all__` but not imported:
+    - `add_code_examples_to_database` from `.embeddings`
+    - `search_documents` from `.embeddings`
+    - `search_code_examples` from `.embeddings`
+    - `process_code_example` from `.code_analysis`
+  - Server now starts successfully without import errors
+
+## [2025-08-08] - Contextual Embeddings Implementation
+
+### Added
+
+- **Contextual Embeddings Feature** for improved RAG search quality:
+  - Implemented full contextual embedding generation pipeline in `add_documents_to_database()`
+  - Uses ThreadPoolExecutor for parallel processing with configurable max workers
+  - Generates context for each chunk using OpenAI to improve search relevance
+  - Handles partial failures gracefully - falls back to standard embeddings for failed chunks
+  - Tracks success/failure metrics for monitoring
+
+- **Configuration Options**:
+  - `USE_CONTEXTUAL_EMBEDDINGS` - Enable/disable the feature (default: false)
+  - `CONTEXTUAL_EMBEDDING_MODEL` - OpenAI model for context generation (default: gpt-4o-mini)
+  - `CONTEXTUAL_EMBEDDING_MAX_TOKENS` - Max tokens for context (default: 200)
+  - `CONTEXTUAL_EMBEDDING_TEMPERATURE` - Temperature for generation (default: 0.3)
+  - `CONTEXTUAL_EMBEDDING_MAX_DOC_CHARS` - Max document size for context (default: 25000)
+  - `CONTEXTUAL_EMBEDDING_MAX_WORKERS` - ThreadPool workers (default: 10)
+
+- **Enhanced Functions**:
+  - `generate_contextual_embedding()` - Now includes configuration validation, chunk position info, and better error handling
+  - `process_chunk_with_context()` - Updated to handle chunk position parameters
+  - Added metadata flag `contextual_embedding` to track which documents use contextual embeddings
+
+- **Comprehensive Test Suite**:
+  - Created `tests/test_contextual_embeddings.py` with 15+ test cases
+  - Tests cover basic functionality, configuration validation, error handling, partial failures, edge cases, and performance
+
+### Fixed
+
+- **Security Issue**: Fixed deprecated OpenAI API pattern in `src/utils/summarization.py`
+  - Changed from global `openai.api_key` to client instance pattern
+  - Improves security and follows OpenAI best practices
+
+### Changed
+
+- **Improved Error Handling**: Individual chunk processing with ThreadPoolExecutor
+  - Each chunk is processed independently with its own error handling
+  - Failed chunks fall back to standard embeddings while successful ones use contextual
+  - Better logging and metrics for monitoring success rates
+
 ## [2025-08-08] - Critical Source Filtering Bug Fix
 
 ### Fixed

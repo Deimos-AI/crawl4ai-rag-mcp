@@ -162,7 +162,7 @@ class TestEmbeddingFunctions:
 class TestContextualEmbedding:
     """Test contextual embedding generation"""
 
-    @patch.dict(os.environ, {"MODEL_CHOICE": "gpt-4"})
+    @patch.dict(os.environ, {"CONTEXTUAL_EMBEDDING_MODEL": "gpt-4"})
     @patch("utils.openai.chat.completions.create")
     def test_generate_contextual_embedding_success(self, mock_create):
         """Test successful contextual embedding generation"""
@@ -176,10 +176,9 @@ class TestContextualEmbedding:
         # Test
         full_doc = "This is a full document about testing in Python"
         chunk = "Testing is important"
-        result, success = generate_contextual_embedding(full_doc, chunk)
+        result = generate_contextual_embedding(chunk, full_doc, 0, 1)
 
         # Verify
-        assert success is True
         assert "This chunk discusses testing" in result
         assert chunk in result
         mock_create.assert_called_once()
@@ -192,11 +191,10 @@ class TestContextualEmbedding:
 
         # Test
         chunk = "Test chunk"
-        result, success = generate_contextual_embedding("Full doc", chunk)
+        result = generate_contextual_embedding(chunk, "Full doc", 0, 1)
 
         # Verify
-        assert success is False
-        assert result == chunk  # Returns original chunk on error
+        assert result == chunk  # Returns original chunk on error  # Returns original chunk on error
 
     def test_process_chunk_with_context(self):
         """Test chunk processing helper function"""
@@ -849,10 +847,10 @@ class TestBatchProcessingAndEdgeCases:
         very_long_document = "A" * 30000
         chunk = "This is a test chunk"
 
-        result, success = generate_contextual_embedding(very_long_document, chunk)
+        result = generate_contextual_embedding(chunk, very_long_document)
 
         # Verify the document was truncated in the prompt
-        assert success is True
+        assert "Context for chunk" in result
         call_args = mock_create.call_args[1]  # Use keyword arguments
         prompt_content = call_args["messages"][1]["content"]
         # Check that document section is within the 25000 character limit
