@@ -36,6 +36,9 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # Copy the rest of the source code
 COPY src/ ./src/
 
+# Copy knowledge graph modules
+COPY knowledge_graphs/ ./knowledge_graphs/
+
 # Run crawl4ai-setup if available
 RUN crawl4ai-setup || echo "crawl4ai-setup not required"
 
@@ -88,8 +91,11 @@ COPY --from=builder --chown=appuser:appuser /usr/local/bin /usr/local/bin
 # Copy application code
 COPY --from=builder --chown=appuser:appuser /build/src ./src
 
+# Copy knowledge graph modules
+COPY --from=builder --chown=appuser:appuser /build/knowledge_graphs ./knowledge_graphs
+
 # Create necessary directories with proper permissions
-RUN mkdir -p /app/data /app/logs /app/analysis_scripts \
+RUN mkdir -p /app/data /app/logs /app/analysis_scripts /app/knowledge_graphs/repos \
     && chown -R appuser:appuser /app
 
 # Add metadata labels
