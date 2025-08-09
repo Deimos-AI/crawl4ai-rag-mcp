@@ -12,11 +12,8 @@ REGISTRY := docker.io/krashnicov
 IMAGE := $(REGISTRY)/$(APP_NAME)
 PLATFORMS := linux/amd64,linux/arm64
 
-# Docker compose files (for legacy support)
+# Docker compose command
 DOCKER_COMPOSE := docker compose
-DOCKER_COMPOSE_PROD := $(DOCKER_COMPOSE) -f archives/docker-compose/docker-compose.prod.yml
-DOCKER_COMPOSE_DEV := $(DOCKER_COMPOSE) -f archives/docker-compose/docker-compose.dev.yml
-DOCKER_COMPOSE_TEST := $(DOCKER_COMPOSE) -f archives/docker-compose/docker-compose.test.yml
 PYTHON := uv run python
 PYTEST := uv run pytest
 RUFF := uv run ruff
@@ -37,13 +34,14 @@ COLOR_RESET := $(NC)
 # ============================================
 .PHONY: help install start stop clean test build push release
 .PHONY: dev prod logs health security-scan
-.PHONY: docker-build docker-push docker-scan
+.PHONY: docker-build docker-push docker-scan build-local
 .PHONY: dirs env-setup quickstart
 .PHONY: restart status shell python lint format
 .PHONY: dev-bg dev-logs dev-down dev-restart dev-rebuild
 .PHONY: test-unit test-integration test-all test-coverage
 .PHONY: clean-all env-check deps ps
 .PHONY: prod-down prod-logs prod-ps prod-restart
+.PHONY: start-full start-dev volumes backup restore
 
 # ============================================
 # Default Target
@@ -92,9 +90,11 @@ help-legacy: ## Show legacy command help
 # ============================================
 dirs: ## Create required directories
 	@echo "$(GREEN)Creating directory structure...$(NC)"
-	@mkdir -p data/{qdrant,neo4j,valkey}
+	@mkdir -p data
 	@mkdir -p logs
 	@mkdir -p analysis_scripts/{user_scripts,validation_results}
+	@mkdir -p docker/neo4j/import
+	@mkdir -p notebooks
 	@echo "$(GREEN)✓ Directories created$(NC)"
 
 env-setup: ## Setup environment file
@@ -143,7 +143,7 @@ quickstart: install start ## Complete setup and start
 # ============================================
 # Service Management (NEW SIMPLIFIED)
 # ============================================
-start: ## Start core services
+start: ## Start core services (includes Neo4j)
 	@echo "$(GREEN)Starting services...$(NC)"
 	@docker compose --profile core up -d
 	@echo "$(GREEN)Waiting for services to be ready...$(NC)"
@@ -153,6 +153,27 @@ start: ## Start core services
 	@echo "$(GREEN)🚀 Services running at:$(NC)"
 	@echo "  • MCP Server: http://localhost:8051"
 	@echo "  • Qdrant Dashboard: http://localhost:6333/dashboard"
+	@echo "  • Neo4j Browser: http://localhost:7474"
+	@echo "  • SearXNG Search: http://localhost:8080"
+	@echo ""
+
+start-full: ## Start full services (same as core now)
+	@$(MAKE) start
+
+start-dev: ## Start development environment with all tools
+	@echo "$(GREEN)Starting development environment...$(NC)"
+	@docker compose --profile dev up -d
+	@echo "$(GREEN)Waiting for services to be ready...$(NC)"
+	@sleep 5
+	@$(MAKE) health
+	@echo ""
+	@echo "$(GREEN)🚀 Development services running at:$(NC)"
+	@echo "  • MCP Server: http://localhost:8051"
+	@echo "  • Qdrant Dashboard: http://localhost:6333/dashboard"
+	@echo "  • Neo4j Browser: http://localhost:7474"
+	@echo "  • SearXNG Search: http://localhost:8080"
+	@echo "  • Mailhog UI: http://localhost:8025"
+	@echo "  • Jupyter Lab: http://localhost:8888 (token: crawl4ai)"
 	@echo ""
 
 stop: ## Stop all services
@@ -174,55 +195,73 @@ status: health ## Alias for health
 ps: status ## Show running containers
 
 # ============================================
-# Development Environment (LEGACY SUPPORT)
+# Volume Management (NEW)
 # ============================================
-dev: env-check ## Start development with watch mode
-	@echo "$(COLOR_GREEN)Starting development environment with watch mode...$(COLOR_RESET)"
-	$(DOCKER_COMPOSE_DEV) up --build --watch
+volumes: ## List all Docker volumes for this project
+	@echo "$(GREEN)Project volumes:$(NC)"
+	@docker volume ls | grep -E "crawl4ai" || echo "No volumes found"
 
-dev-bg: env-check ## Start development in background
+backup: ## Backup data volumes to ./backups directory
+	@echo "$(GREEN)Creating backup...$(NC)"
+	@mkdir -p backups/$(shell date +%Y%m%d-%H%M%S)
+	@cd backups/$(shell date +%Y%m%d-%H%M%S) && \
+		docker run --rm -v crawl4ai_mcp_qdrant-data:/data -v $$(pwd):/backup alpine tar czf /backup/qdrant-data.tar.gz -C /data . && \
+		docker run --rm -v crawl4ai_mcp_valkey-data:/data -v $$(pwd):/backup alpine tar czf /backup/valkey-data.tar.gz -C /data . && \
+		docker run --rm -v crawl4ai_mcp_neo4j-data:/data -v $$(pwd):/backup alpine tar czf /backup/neo4j-data.tar.gz -C /data .
+	@echo "$(GREEN)✓ Backup complete in backups/$(NC)"
+
+restore: ## Restore data volumes from backup (specify BACKUP_DIR)
+	@if [ -z "$(BACKUP_DIR)" ]; then \
+		echo "$(RED)Error: Specify BACKUP_DIR=backups/YYYYMMDD-HHMMSS$(NC)"; \
+		exit 1; \
+	fi
+	@echo "$(YELLOW)Restoring from $(BACKUP_DIR)...$(NC)"
+	@docker compose down
+	@docker run --rm -v crawl4ai_mcp_qdrant-data:/data -v $$(pwd)/$(BACKUP_DIR):/backup alpine tar xzf /backup/qdrant-data.tar.gz -C /data
+	@docker run --rm -v crawl4ai_mcp_valkey-data:/data -v $$(pwd)/$(BACKUP_DIR):/backup alpine tar xzf /backup/valkey-data.tar.gz -C /data
+	@docker run --rm -v crawl4ai_mcp_neo4j-data:/data -v $$(pwd)/$(BACKUP_DIR):/backup alpine tar xzf /backup/neo4j-data.tar.gz -C /data
+	@echo "$(GREEN)✓ Restore complete$(NC)"
+
+# ============================================
+# Development Environment (UPDATED)
+# ============================================
+dev: start-dev ## Start development environment
+
+dev-bg: ## Start development in background with watch
 	@echo "$(COLOR_GREEN)Starting development environment in background...$(COLOR_RESET)"
-	$(DOCKER_COMPOSE_DEV) up -d --build
+	@docker compose --profile dev up -d --build
 	@echo "$(COLOR_GREEN)Starting watch mode...$(COLOR_RESET)"
-	$(DOCKER_COMPOSE_DEV) watch
+	@docker compose --profile dev watch
 
 dev-logs: ## View development logs
-	$(DOCKER_COMPOSE_DEV) logs -f mcp-crawl4ai
+	@docker compose logs -f mcp-crawl4ai
 
 dev-down: ## Stop development environment
 	@echo "$(COLOR_YELLOW)Stopping development environment...$(COLOR_RESET)"
-	$(DOCKER_COMPOSE_DEV) down
+	@docker compose down
 
 dev-restart: ## Restart development services
 	@echo "$(COLOR_YELLOW)Restarting development services...$(COLOR_RESET)"
-	$(DOCKER_COMPOSE_DEV) restart mcp-crawl4ai
+	@docker compose restart mcp-crawl4ai
 
 dev-rebuild: ## Rebuild development environment
 	@echo "$(COLOR_YELLOW)Rebuilding development environment...$(COLOR_RESET)"
-	$(DOCKER_COMPOSE_DEV) down
-	$(DOCKER_COMPOSE_DEV) build --no-cache
-	$(MAKE) dev
+	@docker compose down
+	@docker compose build --no-cache mcp-crawl4ai
+	@$(MAKE) dev
 
 # ============================================
-# Production Environment (LEGACY SUPPORT)
+# Production Environment (UPDATED)
 # ============================================
-prod: env-check ## Start production environment
-	@echo "$(COLOR_GREEN)Starting production environment...$(COLOR_RESET)"
-	@docker compose --profile core up -d
+prod: start ## Start production environment (alias for start)
 
-prod-down: ## Stop production environment
-	@echo "$(COLOR_YELLOW)Stopping production environment...$(COLOR_RESET)"
-	$(DOCKER_COMPOSE_PROD) down
+prod-down: stop ## Stop production environment (alias for stop)
 
-prod-logs: ## View production logs
-	$(DOCKER_COMPOSE_PROD) logs -f
+prod-logs: logs ## View production logs (alias for logs)
 
-prod-ps: ## Show production containers
-	$(DOCKER_COMPOSE_PROD) ps
+prod-ps: ps ## Show production containers (alias for ps)
 
-prod-restart: ## Restart production services
-	@echo "$(COLOR_YELLOW)Restarting production services...$(COLOR_RESET)"
-	$(DOCKER_COMPOSE_PROD) restart
+prod-restart: restart ## Restart production services (alias for restart)
 
 # ============================================
 # Testing
@@ -234,14 +273,14 @@ test-unit: ## Run unit tests only
 	@if [ -f /.dockerenv ]; then \
 		$(PYTEST) tests/unit -v --tb=short; \
 	else \
-		$(DOCKER_COMPOSE_TEST) run --rm mcp-crawl4ai-test $(PYTEST) tests/unit -v --tb=short; \
+		$(DOCKER_COMPOSE) run --rm mcp-crawl4ai $(PYTEST) tests/unit -v --tb=short; \
 	fi
 
 test-integration: ## Run integration tests
 	@echo "$(COLOR_GREEN)Running integration tests with Docker services...$(COLOR_RESET)"
-	$(DOCKER_COMPOSE_TEST) up -d
-	$(DOCKER_COMPOSE_TEST) run --rm mcp-crawl4ai-test $(PYTEST) tests/integration -v
-	$(DOCKER_COMPOSE_TEST) down
+	$(DOCKER_COMPOSE) --profile core up -d
+	$(DOCKER_COMPOSE) run --rm mcp-crawl4ai $(PYTEST) tests/integration -v
+	$(DOCKER_COMPOSE) down
 
 test-all: ## Run all tests
 	@echo "$(COLOR_GREEN)Running all tests...$(COLOR_RESET)"
@@ -258,7 +297,12 @@ test-quick: ## Run quick unit tests
 # ============================================
 # Docker Build & Release (NEW)
 # ============================================
-docker-build: ## Build Docker image
+build-local: ## Build Docker image locally
+	@echo "$(GREEN)Building local Docker image...$(NC)"
+	@docker compose build mcp-crawl4ai
+	@echo "$(GREEN)✓ Local build complete$(NC)"
+
+docker-build: ## Build Docker image for multiple platforms
 	@echo "$(GREEN)Building $(IMAGE):$(VERSION)...$(NC)"
 	@docker buildx create --use --name multiarch || true
 	@docker buildx build \

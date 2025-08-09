@@ -53,9 +53,31 @@ FROM python:3.12-slim AS production
 
 WORKDIR /app
 
-# Install only runtime dependencies
+# Install runtime dependencies including Chromium dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
+    # Dependencies for Chromium/Playwright
+    libglib2.0-0 \
+    libnss3 \
+    libnspr4 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libdrm2 \
+    libxkbcommon0 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxfixes3 \
+    libxrandr2 \
+    libgbm1 \
+    libasound2 \
+    libatspi2.0-0 \
+    libgtk-3-0 \
+    libpango-1.0-0 \
+    libcairo2 \
+    libx11-6 \
+    libx11-xcb1 \
+    libxcb1 \
     && rm -rf /var/lib/apt/lists/* \
     && useradd -m -u 1000 -s /bin/bash appuser
 
@@ -82,6 +104,9 @@ ENV PORT=8051
 
 # Switch to non-root user
 USER appuser
+
+# Install Playwright browsers as appuser
+RUN playwright install chromium
 
 # Health check for container orchestration
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \

@@ -2,7 +2,7 @@
 # Note: The 'version' field is intentionally omitted as it's obsolete in modern Docker Compose
 # See: https://docs.docker.com/compose/compose-file/
 
-name: crawl4ai-mcp  # Optional: Explicitly set project name
+name: crawl4ai_mcp  # Optional: Explicitly set project name
 
 # ============================================
 # Networks
@@ -18,6 +18,8 @@ volumes:
   qdrant-data:
   neo4j-data:
   valkey-data:
+  searxng-cache:
+  neo4j-logs:
 
 # ============================================
 # Services
@@ -107,7 +109,7 @@ services:
       - "${QDRANT_GRPC_PORT:-6334}:6334"
     volumes:
       - qdrant-data:/qdrant/storage:rw
-      - ./docker/qdrant/config.yaml:/qdrant/config/config.yaml:ro
+      # - ./docker/qdrant/config.yaml:/qdrant/config/config.yaml:ro
     environment:
       - QDRANT__SERVICE__API_KEY=${QDRANT_API_KEY}
       - QDRANT__SERVICE__GRPC_PORT=6334
@@ -116,12 +118,11 @@ services:
     networks:
       - crawl4ai-network
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:6333/readyz"]
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/6333 && echo -e 'GET /readyz HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q 'HTTP/1.1 200' <&3"]
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 10s
-    user: "1000:1000"
+    # user: "1000:1000" # Would be nice to implement this but it causes all sorts of permissions issues.
     security_opt:
       - no-new-privileges:true
     logging:
@@ -177,6 +178,7 @@ services:
       - "${SEARXNG_PORT:-8080}:8080"
     volumes:
       - ./docker/searxng:/etc/searxng:ro
+      - searxng-cache:/var/cache/searxng:rw
     environment:
       - SEARXNG_BASE_URL=${SEARXNG_BASE_URL:-http://localhost:8080/}
       - SEARXNG_SECRET_KEY=${SEARXNG_SECRET_KEY:-ultrasecretkey}
@@ -208,7 +210,7 @@ services:
   neo4j:
     image: neo4j:5.25-community
     container_name: neo4j
-    profiles: ["full", "dev"]  # Only in full/dev profiles
+    profiles: ["core", "full", "dev"]  # Only in full/dev profiles
     restart: unless-stopped
     ports:
       - "${NEO4J_HTTP_PORT:-7474}:7474"
@@ -223,6 +225,7 @@ services:
     volumes:
       - neo4j-data:/data:rw
       - ./docker/neo4j/import:/import:ro
+      - neo4j-logs:/logs:rw
     networks:
       - crawl4ai-network
     healthcheck:
