@@ -22,22 +22,27 @@ class Settings:
     def _load_environment(self) -> None:
         """Load environment variables from .env file."""
         # Determine which .env file to load
-        dotenv_path = Path(__file__).parent.parent.parent / ".env"
-
-        if os.getenv("USE_TEST_ENV", "").lower() in ("true", "1", "yes"):
-            test_env_path = dotenv_path.with_suffix(".test")
+        base_path = Path(__file__).parent.parent.parent
+        dotenv_path = base_path / ".env"
+        
+        # Priority order: .env.dev > .env.test > .env
+        dev_env_path = base_path / ".env.dev"
+        test_env_path = base_path / ".env.test"
+        
+        # Check for development environment first
+        if dev_env_path.exists() and os.getenv("ENVIRONMENT") != "production":
+            dotenv_path = dev_env_path
+            logger.info(f"Using development environment: {dotenv_path}")
+        elif os.getenv("USE_TEST_ENV", "").lower() in ("true", "1", "yes"):
             if test_env_path.exists():
                 dotenv_path = test_env_path
                 logger.info(f"Using test environment: {dotenv_path}")
 
         # Load environment variables
         if dotenv_path.exists():
-            if os.getenv("USE_TEST_ENV", "").lower() in ("true", "1", "yes"):
-                # Test mode: .env.test values override environment
-                load_dotenv(dotenv_path, override=True)
-            else:
-                # Normal mode: .env file values override environment
-                load_dotenv(dotenv_path, override=True)
+            # Always override to ensure the selected env file takes precedence
+            load_dotenv(dotenv_path, override=True)
+            logger.debug(f"Loaded environment from: {dotenv_path}")
 
     def _validate_configuration(self) -> None:
         """Validate critical configuration values."""

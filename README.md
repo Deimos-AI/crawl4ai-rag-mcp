@@ -1019,9 +1019,42 @@ make docker-test-down && make docker-test-up-wait
 
 ## Development & Customization
 
-This Docker stack provides a foundation for building more complex MCP servers:
+This Docker stack provides a foundation for building more complex MCP servers.
+
+### Development Modes
+
+#### 1. Hybrid Development with stdio Mode (Recommended for Testing)
+
+Run the MCP server locally with stdio transport for easier testing and debugging:
+
+```bash
+# Quick start: Run services in Docker + MCP server locally
+make dev-hybrid
+
+# Or step by step:
+make dev-services  # Start database services in Docker
+make dev-stdio     # Run MCP server locally with stdio transport
+```
+
+This mode provides:
+- Direct process communication (stdio) for easier debugging
+- Database services running in Docker (no local installation needed)
+- Instant server restarts without Docker rebuilds
+- Better integration with MCP clients like Claude Desktop
+
+See [docs/DEVELOPMENT_STDIO.md](docs/DEVELOPMENT_STDIO.md) for detailed setup instructions.
+
+#### 2. Full Docker Development (HTTP Mode)
+
+Traditional Docker-based development with HTTP transport:
+
+```bash
+make dev-bg  # Start everything in Docker with watch mode
+```
+
+### Customization Options
 
 1. **Modify the MCP server**: Edit files in `src/` and rebuild: `make dev-rebuild`
-2. **Add custom tools**: Extend `src/crawl4ai_mcp.py` with `@mcp.tool()` decorators
+2. **Add custom tools**: Extend `src/tools.py` with `@mcp.tool()` decorators
 3. **Customize SearXNG**: Edit `searxng/settings.yml` and restart
 4. **Add services**: Extend `docker-compose.yml` with additional containers

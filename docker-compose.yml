@@ -102,7 +102,7 @@ services:
   qdrant:
     image: qdrant/qdrant:v1.15.1
     container_name: qdrant
-    profiles: ["core", "full", "dev"]
+    profiles: ["core", "full", "dev", "services-only"]
     restart: unless-stopped
     ports:
       - "${QDRANT_PORT:-6333}:6333"
@@ -137,7 +137,7 @@ services:
   valkey:
     image: valkey/valkey:8-alpine
     container_name: valkey
-    profiles: ["core", "full", "dev"]
+    profiles: ["core", "full", "dev", "services-only"]
     restart: unless-stopped
     command: >
       valkey-server
@@ -172,7 +172,7 @@ services:
   searxng:
     image: searxng/searxng:latest
     container_name: searxng
-    profiles: ["core", "full", "dev"]
+    profiles: ["core", "full", "dev", "services-only"]
     restart: unless-stopped
     ports:
       - "${SEARXNG_PORT:-8080}:8080"
@@ -210,7 +210,7 @@ services:
   neo4j:
     image: neo4j:5.25-community
     container_name: neo4j
-    profiles: ["core", "full", "dev"]  # Only in full/dev profiles
+    profiles: ["core", "full", "dev", "services-only"]  # Only in full/dev profiles
     restart: unless-stopped
     ports:
       - "${NEO4J_HTTP_PORT:-7474}:7474"
@@ -293,9 +293,11 @@ services:
 # - core: Minimal setup (MCP, Qdrant, Valkey, SearXNG)
 # - full: Complete setup (core + Neo4j)
 # - dev: Development setup (full + Mailhog, Jupyter)
+# - services-only: Database services only (for stdio mode development)
 #
 # Examples:
-# docker compose --profile core up -d     # Production minimal
-# docker compose --profile full up -d     # Production complete
-# docker compose --profile dev up -d      # Development environment
+# docker compose --profile core up -d         # Production minimal
+# docker compose --profile full up -d         # Production complete
+# docker compose --profile dev up -d          # Development environment
+# docker compose --profile services-only up -d # Services for stdio development
 # ============================================

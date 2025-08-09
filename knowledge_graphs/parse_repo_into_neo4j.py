@@ -86,9 +86,8 @@ class Neo4jCodeAnalyzer:
             
             for node in ast.walk(tree):
                 if isinstance(node, ast.ClassDef):
-                    # Extract class with its methods and attributes
+                    # Extract class with its methods and comprehensive attributes
                     methods = []
-                    attributes = []
                     
                     for item in node.body:
                         if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -118,13 +117,9 @@ class Neo4jCodeAnalyzer:
                                     'return_type': return_type,
                                     'args': [arg.arg for arg in item.args.args if arg.arg != 'self']  # Keep for backwards compatibility
                                 })
-                        elif isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name):
-                            # Type annotated attributes
-                            if not item.target.id.startswith('_'):
-                                attributes.append({
-                                    'name': item.target.id,
-                                    'type': self._get_name(item.annotation) if item.annotation else 'Any'
-                                })
+                    
+                    # Use comprehensive attribute extraction
+                    attributes = self._extract_class_attributes(node)
                     
                     classes.append({
                         'name': node.name,
@@ -191,6 +186,421 @@ class Neo4jCodeAnalyzer:
             logger.warning(f"Could not analyze {file_path}: {e}")
             return None
     
+    def _extract_class_attributes(self, class_node: ast.ClassDef) -> List[Dict[str, Any]]:
+        """
+        Comprehensively extract all class attributes including:
+        - Instance attributes from __init__ methods (self.attr = value)
+        - Type annotated attributes in __init__ (self.attr: Type = value)
+        - Property decorators (@property def attr)
+        - Class-level attributes (both annotated and non-annotated)
+        - __slots__ definitions
+        - Dataclass and attrs field definitions
+        """
+        attributes = []
+        attribute_stats = {"total": 0, "dataclass": 0, "attrs": 0, "class_vars": 0, "properties": 0, "slots": 0}
+        
+        try:
+            # Check if class has dataclass or attrs decorators
+            is_dataclass = self._has_dataclass_decorator(class_node)
+            is_attrs_class = self._has_attrs_decorator(class_node)
+            
+            # Extract class-level attributes
+            for item in class_node.body:
+                try:
+                    # Type annotated class attributes
+                    if isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name):
+                        if not item.target.id.startswith('_'):
+                            # FIXED: Check for ClassVar annotations before assuming dataclass/attrs semantics
+                            is_class_var = self._is_class_var_annotation(item.annotation)
+                            
+                            # Determine attribute classification based on ClassVar and framework
+                            if is_class_var:
+                                # ClassVar attributes are always class attributes, regardless of framework
+                                is_instance_attr = False
+                                is_class_attr = True
+                                attribute_stats["class_vars"] += 1
+                            elif is_dataclass or is_attrs_class:
+                                # In dataclass/attrs, non-ClassVar annotations are instance variables
+                                is_instance_attr = True
+                                is_class_attr = False
+                                if is_dataclass:
+                                    attribute_stats["dataclass"] += 1
+                                if is_attrs_class:
+                                    attribute_stats["attrs"] += 1
+                            else:
+                                # Regular classes: annotations without assignment are typically class-level type hints
+                                is_instance_attr = False
+                                is_class_attr = True
+                            
+                            attr_info = {
+                                'name': item.target.id,
+                                'type': self._get_name(item.annotation) if item.annotation else 'Any',
+                                'is_instance': is_instance_attr,
+                                'is_class': is_class_attr,
+                                'is_property': False,
+                                'has_type_hint': True,
+                                'default_value': self._get_default_value(item.value) if item.value else None,
+                                'line_number': item.lineno,
+                                'from_dataclass': is_dataclass,
+                                'from_attrs': is_attrs_class,
+                                'is_class_var': is_class_var
+                            }
+                            attributes.append(attr_info)
+                            attribute_stats["total"] += 1
+                    
+                    # Non-annotated class attributes
+                    elif isinstance(item, ast.Assign):
+                        # Check for __slots__
+                        for target in item.targets:
+                            if isinstance(target, ast.Name):
+                                if target.id == '__slots__':
+                                    slots = self._extract_slots(item.value)
+                                    for slot_name in slots:
+                                        if not slot_name.startswith('_'):
+                                            attributes.append({
+                                                'name': slot_name,
+                                                'type': 'Any',
+                                                'is_instance': True,  # slots are instance attributes
+                                                'is_class': False,
+                                                'is_property': False,
+                                                'has_type_hint': False,
+                                                'default_value': None,
+                                                'line_number': item.lineno,
+                                                'from_slots': True,
+                                                'from_dataclass': False,
+                                                'from_attrs': False,
+                                                'is_class_var': False
+                                            })
+                                            attribute_stats["slots"] += 1
+                                            attribute_stats["total"] += 1
+                                elif not target.id.startswith('_'):
+                                    # Regular class attribute
+                                    attributes.append({
+                                        'name': target.id,
+                                        'type': self._infer_type_from_value(item.value) if item.value else 'Any',
+                                        'is_instance': False,
+                                        'is_class': True,
+                                        'is_property': False,
+                                        'has_type_hint': False,
+                                        'default_value': self._get_default_value(item.value) if item.value else None,
+                                        'line_number': item.lineno,
+                                        'from_dataclass': False,
+                                        'from_attrs': False,
+                                        'is_class_var': False
+                                    })
+                                    attribute_stats["total"] += 1
+                    
+                    # Properties with @property decorator
+                    elif isinstance(item, ast.FunctionDef) and not item.name.startswith('_'):
+                        if any(isinstance(dec, ast.Name) and dec.id == 'property' 
+                               for dec in item.decorator_list):
+                            return_type = self._get_name(item.returns) if item.returns else 'Any'
+                            attributes.append({
+                                'name': item.name,
+                                'type': return_type,
+                                'is_instance': False,  # properties are accessed on instances but defined at class level
+                                'is_class': False,
+                                'is_property': True,
+                                'has_type_hint': item.returns is not None,
+                                'default_value': None,
+                                'line_number': item.lineno,
+                                'from_dataclass': False,
+                                'from_attrs': False,
+                                'is_class_var': False
+                            })
+                            attribute_stats["properties"] += 1
+                            attribute_stats["total"] += 1
+                
+                except Exception as e:
+                    logger.debug(f"Error extracting attribute from class body item: {e}")
+                    continue
+            
+            # Extract attributes from __init__ method (unless it's a dataclass/attrs class with no __init__)
+            init_attributes = self._extract_init_attributes(class_node)
+            for init_attr in init_attributes:
+                # Ensure init attributes have framework metadata
+                init_attr.setdefault('from_dataclass', False)
+                init_attr.setdefault('from_attrs', False)
+                init_attr.setdefault('is_class_var', False)
+            attributes.extend(init_attributes)
+            attribute_stats["total"] += len(init_attributes)
+            
+            # IMPROVED: Enhanced deduplication logic that respects dataclass semantics
+            unique_attributes = {}
+            for attr in attributes:
+                name = attr['name']
+                if name not in unique_attributes:
+                    unique_attributes[name] = attr
+                else:
+                    existing = unique_attributes[name]
+                    should_replace = False
+                    
+                    # Priority 1: Dataclass/attrs fields take precedence over regular attributes
+                    if (attr.get('from_dataclass') or attr.get('from_attrs')) and not (existing.get('from_dataclass') or existing.get('from_attrs')):
+                        should_replace = True
+                    # Priority 2: Type-hinted attributes over non-hinted (within same framework)
+                    elif attr['has_type_hint'] and not existing['has_type_hint'] and not should_replace:
+                        # Only if not already prioritizing dataclass/attrs
+                        if not ((existing.get('from_dataclass') or existing.get('from_attrs')) and not (attr.get('from_dataclass') or attr.get('from_attrs'))):
+                            should_replace = True
+                    # Priority 3: Instance attributes over class attributes (within same framework and type hint status)
+                    elif (attr['is_instance'] and not existing['is_instance'] and 
+                          attr['has_type_hint'] == existing['has_type_hint'] and
+                          not should_replace):
+                        # Only if not already prioritizing by framework or type hints
+                        existing_is_framework = existing.get('from_dataclass') or existing.get('from_attrs')
+                        attr_is_framework = attr.get('from_dataclass') or attr.get('from_attrs')
+                        if existing_is_framework == attr_is_framework:
+                            should_replace = True
+                    # Priority 4: Properties are always kept (they're unique)
+                    elif attr.get('is_property') and not existing.get('is_property'):
+                        should_replace = True
+                    
+                    if should_replace:
+                        unique_attributes[name] = attr
+            
+            # Log attribute extraction statistics
+            final_count = len(unique_attributes)
+            if attribute_stats["total"] > 0:
+                logger.debug(f"Extracted {final_count} unique attributes from {class_node.name}: "
+                           f"dataclass={attribute_stats['dataclass']}, attrs={attribute_stats['attrs']}, "
+                           f"class_vars={attribute_stats['class_vars']}, properties={attribute_stats['properties']}, "
+                           f"slots={attribute_stats['slots']}, total_processed={attribute_stats['total']}")
+            
+            return list(unique_attributes.values())
+            
+        except Exception as e:
+            logger.warning(f"Error extracting class attributes from {class_node.name}: {e}")
+            return []
+
+    def _has_dataclass_decorator(self, class_node: ast.ClassDef) -> bool:
+        """Check if class has @dataclass decorator"""
+        try:
+            for decorator in class_node.decorator_list:
+                if isinstance(decorator, ast.Name):
+                    if decorator.id in ['dataclass', 'dataclasses']:
+                        return True
+                elif isinstance(decorator, ast.Attribute):
+                    # Handle dataclasses.dataclass
+                    attr_name = self._get_name(decorator)
+                    if 'dataclass' in attr_name.lower():
+                        return True
+                elif isinstance(decorator, ast.Call):
+                    # Handle @dataclass() with parameters
+                    func_name = self._get_name(decorator.func)
+                    if 'dataclass' in func_name.lower():
+                        return True
+        except Exception as e:
+            logger.debug(f"Error checking dataclass decorator: {e}")
+        return False
+    
+    def _has_attrs_decorator(self, class_node: ast.ClassDef) -> bool:
+        """Check if class has @attrs decorator"""
+        try:
+            for decorator in class_node.decorator_list:
+                if isinstance(decorator, ast.Name):
+                    if decorator.id in ['attrs', 'attr']:
+                        return True
+                elif isinstance(decorator, ast.Attribute):
+                    # Handle attr.s, attrs.define, etc.
+                    attr_name = self._get_name(decorator)
+                    if any(x in attr_name.lower() for x in ['attr.s', 'attr.define', 'attrs.define', 'attrs.frozen']):
+                        return True
+                elif isinstance(decorator, ast.Call):
+                    # Handle @attr.s() with parameters
+                    func_name = self._get_name(decorator.func)
+                    if any(x in func_name.lower() for x in ['attr.s', 'attr.define', 'attrs.define', 'attrs.frozen']):
+                        return True
+        except Exception as e:
+            logger.debug(f"Error checking attrs decorator: {e}")
+        return False
+
+    def _is_class_var_annotation(self, annotation_node) -> bool:
+        """
+        Check if an annotation is a ClassVar type.
+        Handles patterns like ClassVar[int], typing.ClassVar[str], etc.
+        """
+        if annotation_node is None:
+            return False
+        
+        try:
+            annotation_str = self._get_name(annotation_node)
+            return 'ClassVar' in annotation_str
+        except Exception as e:
+            logger.debug(f"Error checking ClassVar annotation: {e}")
+            return False
+    def _extract_init_attributes(self, class_node: ast.ClassDef) -> List[Dict[str, Any]]:
+        """Extract attributes from __init__ method"""
+        attributes = []
+        
+        # Find __init__ method
+        init_method = None
+        for item in class_node.body:
+            if isinstance(item, ast.FunctionDef) and item.name == '__init__':
+                init_method = item
+                break
+        
+        if not init_method:
+            return attributes
+        
+        try:
+            for node in ast.walk(init_method):
+                try:
+                    # Handle annotated assignments: self.attr: Type = value
+                    if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Attribute):
+                        if (isinstance(node.target.value, ast.Name) and 
+                            node.target.value.id == 'self' and 
+                            not node.target.attr.startswith('_')):
+                            
+                            attributes.append({
+                                'name': node.target.attr,
+                                'type': self._get_name(node.annotation) if node.annotation else 'Any',
+                                'is_instance': True,
+                                'is_class': False,
+                                'is_property': False,
+                                'has_type_hint': True,
+                                'default_value': self._get_default_value(node.value) if node.value else None,
+                                'line_number': node.lineno
+                            })
+                    
+                    # Handle regular assignments: self.attr = value
+                    elif isinstance(node, ast.Assign):
+                        for target in node.targets:
+                            if isinstance(target, ast.Attribute):
+                                if (isinstance(target.value, ast.Name) and 
+                                    target.value.id == 'self' and 
+                                    not target.attr.startswith('_')):
+                                    
+                                    # Try to infer type from assignment value
+                                    inferred_type = self._infer_type_from_value(node.value)
+                                    
+                                    attributes.append({
+                                        'name': target.attr,
+                                        'type': inferred_type,
+                                        'is_instance': True,
+                                        'is_class': False,
+                                        'is_property': False,
+                                        'has_type_hint': False,
+                                        'default_value': self._get_default_value(node.value),
+                                        'line_number': node.lineno
+                                    })
+                            
+                            # Handle multiple assignments: self.x = self.y = value
+                            elif isinstance(target, ast.Tuple):
+                                for elt in target.elts:
+                                    if (isinstance(elt, ast.Attribute) and 
+                                        isinstance(elt.value, ast.Name) and 
+                                        elt.value.id == 'self' and 
+                                        not elt.attr.startswith('_')):
+                                        
+                                        inferred_type = self._infer_type_from_value(node.value)
+                                        attributes.append({
+                                            'name': elt.attr,
+                                            'type': inferred_type,
+                                            'is_instance': True,
+                                            'is_class': False,
+                                            'is_property': False,
+                                            'has_type_hint': False,
+                                            'default_value': self._get_default_value(node.value),
+                                            'line_number': node.lineno
+                                        })
+                
+                except Exception as e:
+                    logger.debug(f"Error extracting __init__ attribute: {e}")
+                    continue
+        
+        except Exception as e:
+            logger.debug(f"Error walking __init__ method: {e}")
+        
+        return attributes
+
+    def _extract_slots(self, slots_node) -> List[str]:
+        """Extract slot names from __slots__ definition"""
+        slots = []
+        
+        try:
+            if isinstance(slots_node, (ast.List, ast.Tuple)):
+                for elt in slots_node.elts:
+                    if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
+                        slots.append(elt.value)
+                    elif isinstance(elt, ast.Str):  # Python < 3.8 compatibility
+                        slots.append(elt.s)
+            elif isinstance(slots_node, ast.Constant) and isinstance(slots_node.value, str):
+                slots.append(slots_node.value)
+            elif isinstance(slots_node, ast.Str):  # Python < 3.8 compatibility
+                slots.append(slots_node.s)
+        
+        except Exception as e:
+            logger.debug(f"Error extracting slots: {e}")
+        
+        return slots
+
+    def _infer_type_from_value(self, value_node) -> str:
+        """Attempt to infer type from assignment value with enhanced patterns"""
+        try:
+            if isinstance(value_node, ast.Constant):
+                if isinstance(value_node.value, bool):
+                    return 'bool'
+                elif isinstance(value_node.value, int):
+                    return 'int'
+                elif isinstance(value_node.value, float):
+                    return 'float'
+                elif isinstance(value_node.value, str):
+                    return 'str'
+                elif isinstance(value_node.value, bytes):
+                    return 'bytes'
+                elif value_node.value is None:
+                    return 'Optional[Any]'
+            elif isinstance(value_node, (ast.List, ast.ListComp)):
+                return 'List[Any]'
+            elif isinstance(value_node, (ast.Dict, ast.DictComp)):
+                return 'Dict[Any, Any]'
+            elif isinstance(value_node, (ast.Set, ast.SetComp)):
+                return 'Set[Any]'
+            elif isinstance(value_node, ast.Tuple):
+                return 'Tuple[Any, ...]'
+            elif isinstance(value_node, ast.Call):
+                # Try to get type from function call
+                func_name = self._get_name(value_node.func)
+                if func_name in ['list', 'dict', 'set', 'tuple', 'str', 'int', 'float', 'bool']:
+                    return func_name
+                elif func_name in ['defaultdict', 'Counter', 'OrderedDict']:
+                    return f'collections.{func_name}'
+                elif func_name in ['deque']:
+                    return 'collections.deque'
+                elif func_name in ['Path']:
+                    return 'pathlib.Path'
+                elif func_name in ['datetime', 'date', 'time']:
+                    return f'datetime.{func_name}'
+                elif func_name in ['UUID']:
+                    return 'uuid.UUID'
+                elif func_name in ['re.compile', 'compile']:
+                    return 're.Pattern'
+                # Handle dataclass/attrs field calls
+                elif 'field' in func_name.lower():
+                    return 'Any'  # Field type should be inferred from annotation
+                return 'Any'  # Unknown function call
+            elif isinstance(value_node, ast.Attribute):
+                # Handle attribute access like self.other_attr, module.CONSTANT
+                attr_name = self._get_name(value_node)
+                if 'CONSTANT' in attr_name.upper() or attr_name.isupper():
+                    return 'Any'  # Constants could be anything
+                return 'Any'
+            elif isinstance(value_node, ast.Name):
+                # Handle variable references
+                if value_node.id in ['True', 'False']:
+                    return 'bool'
+                elif value_node.id in ['None']:
+                    return 'Optional[Any]'
+                else:
+                    return 'Any'  # Could be any variable
+            elif isinstance(value_node, ast.BinOp):
+                # Handle binary operations - try to infer from operands
+                return 'Any'  # Could be various types depending on operation
+        except Exception as e:
+            logger.debug(f"Error in type inference: {e}")
+        
+        return 'Any'
     def _is_likely_internal(self, import_name: str, project_modules: Set[str]) -> bool:
         """Check if an import is likely internal to the project"""
         if not import_name:
@@ -911,23 +1321,48 @@ class DirectNeo4jExtractor:
                         )
                         relationships_created += 1
                     
-                    # 5. Create Attribute nodes - use MERGE to avoid duplicates
+                    # 5. Create Enhanced Attribute nodes - FIXED: Now storing all extracted metadata
                     for attr in cls['attributes']:
                         attr_full_name = f"{cls['full_name']}.{attr['name']}"
                         # Create attribute with unique ID to avoid conflicts
                         attr_id = f"{cls['full_name']}::{attr['name']}"
+                        
+                        # FIXED: Extract all available attribute metadata including framework metadata
+                        attr_data = {
+                            'name': attr['name'],
+                            'full_name': attr_full_name,
+                            'attr_id': attr_id,
+                            'type': attr.get('type', 'Any'),
+                            'default_value': attr.get('default_value'),
+                            'is_instance': attr.get('is_instance', False),
+                            'is_class': attr.get('is_class', False),
+                            'is_property': attr.get('is_property', False),
+                            'has_type_hint': attr.get('has_type_hint', False),
+                            'line_number': attr.get('line_number', 0),
+                            'from_slots': attr.get('from_slots', False),
+                            'from_dataclass': attr.get('from_dataclass', False),
+                            'from_attrs': attr.get('from_attrs', False),
+                            'is_class_var': attr.get('is_class_var', False)
+                        }
+                        
                         await session.run("""
                             MERGE (a:Attribute {attr_id: $attr_id})
                             ON CREATE SET a.name = $name,
                                          a.full_name = $full_name,
                                          a.type = $type,
-                                         a.created_at = datetime()
-                        """, 
-                            name=attr['name'], 
-                            full_name=attr_full_name,
-                            attr_id=attr_id,
-                            type=attr['type']
-                        )
+                                         a.default_value = $default_value,
+                                         a.is_instance = $is_instance,
+                                         a.is_class = $is_class,
+                                         a.is_property = $is_property,
+                                         a.has_type_hint = $has_type_hint,
+                                         a.line_number = $line_number,
+                                         a.from_slots = $from_slots,
+                                         a.from_dataclass = $from_dataclass,
+                                         a.from_attrs = $from_attrs,
+                                         a.is_class_var = $is_class_var,
+                                         a.created_at = datetime(),
+                                         a.updated_at = datetime()
+                        """, **attr_data)
                         nodes_created += 1
                         
                         # Connect Class to Attribute
@@ -1041,7 +1476,6 @@ class DirectNeo4jExtractor:
                     relationships_created += 1
             
             logger.info(f"Created {nodes_created} nodes and {relationships_created} relationships")
-    
     async def search_graph(self, query_type: str, **kwargs):
         """Search the Neo4j graph directly"""
         async with self.driver.session() as session:

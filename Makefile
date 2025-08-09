@@ -266,6 +266,56 @@ dev-rebuild: ## Rebuild development environment
 	@$(MAKE) dev
 
 # ============================================
+# Hybrid Development (stdio mode)
+# ============================================
+dev-services: ## Start only database services (for stdio development)
+	@echo "$(COLOR_GREEN)Starting database services for stdio development...$(COLOR_RESET)"
+	@docker compose --profile services-only up -d
+	@echo "$(COLOR_GREEN)Services started. Waiting for health checks...$(COLOR_RESET)"
+	@sleep 5
+	@echo "$(COLOR_CYAN)Services available at:$(COLOR_RESET)"
+	@echo "  - Qdrant:   http://localhost:6333/dashboard"
+	@echo "  - Neo4j:    http://localhost:7474"
+	@echo "  - SearXNG:  http://localhost:8080"
+	@echo "  - Valkey:   localhost:6379"
+	@echo ""
+	@echo "$(COLOR_GREEN)Run 'make dev-stdio' to start MCP server in stdio mode$(COLOR_RESET)"
+
+dev-stdio: ## Run MCP server locally with stdio transport
+	@echo "$(COLOR_GREEN)Starting MCP server in stdio mode...$(COLOR_RESET)"
+	@echo "$(COLOR_CYAN)Using configuration from .env.dev$(COLOR_RESET)"
+	@if [ ! -f .env.dev ]; then \
+		echo "$(COLOR_RED)Error: .env.dev not found. Run 'make dev-setup-stdio' first.$(COLOR_RESET)"; \
+		exit 1; \
+	fi
+	@export $$(cat .env.dev | grep -v '^\#' | xargs) && uv run python src/main.py
+
+dev-hybrid: dev-services ## Start services and run MCP in stdio mode
+	@echo "$(COLOR_GREEN)Starting hybrid development environment...$(COLOR_RESET)"
+	@$(MAKE) dev-stdio
+
+dev-services-down: ## Stop database services
+	@echo "$(COLOR_YELLOW)Stopping database services...$(COLOR_RESET)"
+	@docker compose --profile services-only down
+
+dev-services-logs: ## View logs for database services
+	@docker compose --profile services-only logs -f
+
+dev-setup-stdio: ## Initial setup for stdio development
+	@echo "$(COLOR_GREEN)Setting up stdio development environment...$(COLOR_RESET)"
+	@if [ ! -f .env.dev ]; then \
+		echo "$(COLOR_CYAN)Creating .env.dev from template...$(COLOR_RESET)"; \
+		cp .env.example .env.dev; \
+		sed -i 's/TRANSPORT=.*/TRANSPORT=stdio/' .env.dev; \
+		sed -i 's|SEARXNG_URL=.*|SEARXNG_URL=http://localhost:8080|' .env.dev; \
+		sed -i 's|QDRANT_URL=.*|QDRANT_URL=http://localhost:6333|' .env.dev; \
+		sed -i 's|NEO4J_URI=.*|NEO4J_URI=bolt://localhost:7687|' .env.dev; \
+		echo "$(COLOR_GREEN).env.dev created. Please update OPENAI_API_KEY if needed.$(COLOR_RESET)"; \
+	else \
+		echo "$(COLOR_YELLOW).env.dev already exists.$(COLOR_RESET)"; \
+	fi
+
+# ============================================
 # Production Environment (UPDATED)
 # ============================================
 prod: start ## Start production environment (alias for start)
