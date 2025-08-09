@@ -178,7 +178,7 @@ start-dev: ## Start development environment with all tools
 
 stop: ## Stop all services
 	@echo "$(YELLOW)Stopping services...$(NC)"
-	@docker compose down
+	@docker compose --profile core --profile dev down
 	@echo "$(GREEN)✓ Services stopped$(NC)"
 
 restart: stop start ## Restart services
@@ -216,7 +216,7 @@ restore: ## Restore data volumes from backup (specify BACKUP_DIR)
 		exit 1; \
 	fi
 	@echo "$(YELLOW)Restoring from $(BACKUP_DIR)...$(NC)"
-	@docker compose down
+	@docker compose --profile core --profile dev down
 	@docker run --rm -v crawl4ai_mcp_qdrant-data:/data -v $$(pwd)/$(BACKUP_DIR):/backup alpine tar xzf /backup/qdrant-data.tar.gz -C /data
 	@docker run --rm -v crawl4ai_mcp_valkey-data:/data -v $$(pwd)/$(BACKUP_DIR):/backup alpine tar xzf /backup/valkey-data.tar.gz -C /data
 	@docker run --rm -v crawl4ai_mcp_neo4j-data:/data -v $$(pwd)/$(BACKUP_DIR):/backup alpine tar xzf /backup/neo4j-data.tar.gz -C /data
@@ -238,7 +238,7 @@ dev-logs: ## View development logs
 
 dev-down: ## Stop development environment
 	@echo "$(COLOR_YELLOW)Stopping development environment...$(COLOR_RESET)"
-	@docker compose down
+	@docker compose --profile dev down
 
 dev-restart: ## Restart development services
 	@echo "$(COLOR_YELLOW)Restarting development services...$(COLOR_RESET)"
@@ -246,7 +246,7 @@ dev-restart: ## Restart development services
 
 dev-rebuild: ## Rebuild development environment
 	@echo "$(COLOR_YELLOW)Rebuilding development environment...$(COLOR_RESET)"
-	@docker compose down
+	@docker compose --profile dev down
 	@docker compose build --no-cache mcp-crawl4ai
 	@$(MAKE) dev
 
@@ -280,7 +280,7 @@ test-integration: ## Run integration tests
 	@echo "$(COLOR_GREEN)Running integration tests with Docker services...$(COLOR_RESET)"
 	$(DOCKER_COMPOSE) --profile core up -d
 	$(DOCKER_COMPOSE) run --rm mcp-crawl4ai $(PYTEST) tests/integration -v
-	$(DOCKER_COMPOSE) down
+	$(DOCKER_COMPOSE) --profile core down
 
 test-all: ## Run all tests
 	@echo "$(COLOR_GREEN)Running all tests...$(COLOR_RESET)"
@@ -379,7 +379,7 @@ clean-all: stop clean ## Clean everything including volumes
 	@read -p "Are you sure? (y/N) " -n 1 -r; \
 	echo ""; \
 	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
-		docker compose down -v; \
+		docker compose --profile core --profile dev down -v; \
 		rm -rf data logs; \
 		echo "$(GREEN)✓ Full cleanup complete$(NC)"; \
 	else \
