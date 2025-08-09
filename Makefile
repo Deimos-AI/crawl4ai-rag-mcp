@@ -34,8 +34,8 @@ COLOR_RESET := $(NC)
 # ============================================
 .PHONY: help install start stop clean test build push release
 .PHONY: dev prod logs health security-scan
-.PHONY: docker-build docker-push docker-scan build-local
-.PHONY: dirs env-setup quickstart
+.PHONY: docker-build docker-push docker-scan build-local build-prod
+.PHONY: dirs env-setup quickstart update
 .PHONY: restart status shell python lint format
 .PHONY: dev-bg dev-logs dev-down dev-restart dev-rebuild
 .PHONY: test-unit test-integration test-all test-coverage
@@ -139,6 +139,21 @@ install: dirs env-setup ## One-click installation
 	@echo ""
 
 quickstart: install start ## Complete setup and start
+
+update: ## Pull latest code and rebuild production image
+	@echo "$(BLUE)╔════════════════════════════════════════════╗$(NC)"
+	@echo "$(BLUE)║   Updating Crawl4AI MCP Server            ║$(NC)"
+	@echo "$(BLUE)╚════════════════════════════════════════════╝$(NC)"
+	@echo ""
+	@echo "$(GREEN)Pulling latest code from git...$(NC)"
+	@git pull
+	@echo ""
+	@echo "$(GREEN)Building new production image...$(NC)"
+	@$(MAKE) build-prod
+	@echo ""
+	@echo "$(GREEN)✅ Update complete!$(NC)"
+	@echo ""
+	@echo "$(YELLOW)Run 'make restart' to apply changes$(NC)"
 
 # ============================================
 # Service Management (NEW SIMPLIFIED)
@@ -301,6 +316,24 @@ build-local: ## Build Docker image locally
 	@echo "$(GREEN)Building local Docker image...$(NC)"
 	@docker compose build mcp-crawl4ai
 	@echo "$(GREEN)✓ Local build complete$(NC)"
+
+build-prod: ## Build production image (use after pulling repo updates)
+	@echo "$(BLUE)╔════════════════════════════════════════════╗$(NC)"
+	@echo "$(BLUE)║   Building Production Docker Image        ║$(NC)"
+	@echo "$(BLUE)╚════════════════════════════════════════════╝$(NC)"
+	@echo ""
+	@echo "$(GREEN)Pulling latest base images...$(NC)"
+	@docker compose pull
+	@echo ""
+	@echo "$(GREEN)Building production image with no cache...$(NC)"
+	@docker compose build --no-cache mcp-crawl4ai
+	@echo ""
+	@echo "$(GREEN)✅ Production image built successfully!$(NC)"
+	@echo ""
+	@echo "$(YELLOW)Next steps:$(NC)"
+	@echo "  1. Run 'make stop' to stop existing services"
+	@echo "  2. Run 'make start' to start with new image"
+	@echo "  3. Run 'make health' to verify services"
 
 docker-build: ## Build Docker image for multiple platforms
 	@echo "$(GREEN)Building $(IMAGE):$(VERSION)...$(NC)"
