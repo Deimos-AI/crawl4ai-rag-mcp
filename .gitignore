@@ -1,5 +1,6 @@
 .env
 .env.*
+docker-compose.yml
 .venv
 __pycache__
 crawl4ai_mcp.egg-info

@@ -1,0 +1,301 @@
+# Docker Compose configuration for Crawl4AI MCP Server
+# Note: The 'version' field is intentionally omitted as it's obsolete in modern Docker Compose
+# See: https://docs.docker.com/compose/compose-file/
+
+name: crawl4ai_mcp  # Optional: Explicitly set project name
+
+# ============================================
+# Networks
+# ============================================
+networks:
+  crawl4ai-network:
+    driver: bridge
+
+# ============================================
+# Volumes
+# ============================================
+volumes:
+  qdrant-data:
+  neo4j-data:
+  valkey-data:
+  searxng-cache:
+  neo4j-logs:
+
+# ============================================
+# Services
+# ============================================
+services:
+  # ------------------------------------------
+  # Core Services (always required)
+  # ------------------------------------------
+  mcp-crawl4ai:
+    image: ${REGISTRY:-docker.io}/krashnicov/crawl4ai-mcp:${VERSION:-latest}
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+      cache_from:
+        - ${REGISTRY:-docker.io}/krashnicov/crawl4ai-mcp:buildcache
+    container_name: mcp-crawl4ai
+    profiles: ["core", "full", "dev"]
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8051}:8051"
+    environment:
+      - TRANSPORT=${TRANSPORT:-http}
+      - HOST=0.0.0.0
+      - PORT=${PORT:-8051}
+      - SEARXNG_URL=${SEARXNG_URL:-http://searxng:8080}
+      - QDRANT_URL=http://qdrant:6333
+      - NEO4J_URI=bolt://neo4j:7687
+      - VALKEY_URL=redis://valkey:6379
+      - VECTOR_DATABASE=${VECTOR_DATABASE:-qdrant}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - USE_RERANKING=${USE_RERANKING:-true}
+      - ENHANCED_CONTEXT=${ENHANCED_CONTEXT:-true}
+      - ENABLE_AGENTIC_RAG=${ENABLE_AGENTIC_RAG:-true}
+    env_file: .env
+    volumes:
+      - ./data:/app/data:rw
+      - ./logs:/app/logs:rw
+      - ./analysis_scripts:/app/analysis_scripts:rw
+      - /tmp:/app/tmp_scripts:rw
+    networks:
+      - crawl4ai-network
+    depends_on:
+      qdrant:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+      searxng:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s = socket.socket(); s.settimeout(1); s.connect(('localhost', ${PORT:-8051})); s.close()"]
+      interval: 30s
+      timeout: 3s
+      start_period: 10s
+      retries: 3
+    user: "1000:1000"  # Non-root user
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    develop:
+      watch:
+        - action: sync
+          path: ./src
+          target: /app/src
+        - action: rebuild
+          path: ./pyproject.toml
+
+  # ------------------------------------------
+  # Vector Database
+  # ------------------------------------------
+  qdrant:
+    image: qdrant/qdrant:v1.15.1
+    container_name: qdrant
+    profiles: ["core", "full", "dev"]
+    restart: unless-stopped
+    ports:
+      - "${QDRANT_PORT:-6333}:6333"
+      - "${QDRANT_GRPC_PORT:-6334}:6334"
+    volumes:
+      - qdrant-data:/qdrant/storage:rw
+      # - ./docker/qdrant/config.yaml:/qdrant/config/config.yaml:ro
+    environment:
+      - QDRANT__SERVICE__API_KEY=${QDRANT_API_KEY}
+      - QDRANT__SERVICE__GRPC_PORT=6334
+      - QDRANT__LOG_LEVEL=INFO
+      - QDRANT__SERVICE__ENABLE_TLS=false
+    networks:
+      - crawl4ai-network
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/6333 && echo -e 'GET /readyz HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q 'HTTP/1.1 200' <&3"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    # user: "1000:1000" # Would be nice to implement this but it causes all sorts of permissions issues.
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ------------------------------------------
+  # Cache Layer
+  # ------------------------------------------
+  valkey:
+    image: valkey/valkey:8-alpine
+    container_name: valkey
+    profiles: ["core", "full", "dev"]
+    restart: unless-stopped
+    command: >
+      valkey-server
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --save 60 1
+      --save 300 10
+      --save 900 100
+    ports:
+      - "${VALKEY_PORT:-6379}:6379"
+    volumes:
+      - valkey-data:/data:rw
+    networks:
+      - crawl4ai-network
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    user: "999:999"
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ------------------------------------------
+  # Search Engine
+  # ------------------------------------------
+  searxng:
+    image: searxng/searxng:latest
+    container_name: searxng
+    profiles: ["core", "full", "dev"]
+    restart: unless-stopped
+    ports:
+      - "${SEARXNG_PORT:-8080}:8080"
+    volumes:
+      - ./docker/searxng:/etc/searxng:ro
+      - searxng-cache:/var/cache/searxng:rw
+    environment:
+      - SEARXNG_BASE_URL=${SEARXNG_BASE_URL:-http://localhost:8080/}
+      - SEARXNG_SECRET_KEY=${SEARXNG_SECRET_KEY:-ultrasecretkey}
+    networks:
+      - crawl4ai-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+      - DAC_OVERRIDE
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ------------------------------------------
+  # Graph Database (Advanced Features)
+  # ------------------------------------------
+  neo4j:
+    image: neo4j:5.25-community
+    container_name: neo4j
+    profiles: ["core", "full", "dev"]  # Only in full/dev profiles
+    restart: unless-stopped
+    ports:
+      - "${NEO4J_HTTP_PORT:-7474}:7474"
+      - "${NEO4J_BOLT_PORT:-7687}:7687"
+    environment:
+      - NEO4J_AUTH=${NEO4J_USERNAME:-neo4j}/${NEO4J_PASSWORD:-password}
+      - NEO4J_server_memory_heap_initial__size=512M
+      - NEO4J_server_memory_heap_max__size=1G
+      - NEO4J_server_memory_pagecache_size=512M
+      - NEO4J_dbms_security_procedures_unrestricted=apoc.*
+      - NEO4J_dbms_security_procedures_allowlist=apoc.*
+    volumes:
+      - neo4j-data:/data:rw
+      - ./docker/neo4j/import:/import:ro
+      - neo4j-logs:/logs:rw
+    networks:
+      - crawl4ai-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:7474"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 5
+    user: "7474:7474"
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ------------------------------------------
+  # Development Tools (dev profile only)
+  # ------------------------------------------
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: mailhog
+    profiles: ["dev"]  # Only in development
+    restart: "no"  # Don't restart development tools
+    ports:
+      - "1025:1025"  # SMTP
+      - "8025:8025"  # Web UI
+    networks:
+      - crawl4ai-network
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Jupyter notebook for development
+  jupyter:
+    image: jupyter/datascience-notebook:2024-07-29  # Pinned version for stability
+    container_name: jupyter
+    profiles: ["dev"]
+    restart: "no"  # Don't restart development tools
+    ports:
+      - "8888:8888"
+    environment:
+      - JUPYTER_ENABLE_LAB=yes
+      - JUPYTER_TOKEN=${JUPYTER_TOKEN:-crawl4ai}
+    volumes:
+      - ./notebooks:/home/jovyan/work:rw
+      - ./data:/home/jovyan/data:ro
+    networks:
+      - crawl4ai-network
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# ============================================
+# Profile Usage:
+# - core: Minimal setup (MCP, Qdrant, Valkey, SearXNG)
+# - full: Complete setup (core + Neo4j)
+# - dev: Development setup (full + Mailhog, Jupyter)
+#
+# Examples:
+# docker compose --profile core up -d     # Production minimal
+# docker compose --profile full up -d     # Production complete
+# docker compose --profile dev up -d      # Development environment
+# ============================================
