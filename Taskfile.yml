@@ -1,0 +1,262 @@
+version: '3'
+
+vars:
+  APP_NAME: crawl4ai-mcp
+  VERSION:
+    sh: git describe --tags --always --dirty 2>/dev/null || echo "0.1.0"
+  REGISTRY: docker.io/krashnicov
+  IMAGE: '{{.REGISTRY}}/{{.APP_NAME}}'
+  GREEN: '\033[0;32m'
+  YELLOW: '\033[1;33m'
+  RED: '\033[0;31m'
+  BLUE: '\033[0;34m'
+  NC: '\033[0m'
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task: help
+
+  help:
+    desc: Show available tasks
+    silent: true
+    cmds:
+      - echo -e "{{.BLUE}}╔════════════════════════════════════════════╗{{.NC}}"
+      - echo -e "{{.BLUE}}║   Crawl4AI MCP Server - Task Commands     ║{{.NC}}"
+      - echo -e "{{.BLUE}}╚════════════════════════════════════════════╝{{.NC}}"
+      - echo ""
+      - echo -e "{{.GREEN}}Available tasks:{{.NC}}"
+      - task --list
+
+  # ============================================
+  # Installation & Setup
+  # ============================================
+  dirs:
+    desc: Create required directories
+    cmds:
+      - echo -e "{{.GREEN}}Creating directory structure...{{.NC}}"
+      - mkdir -p data/{qdrant,neo4j,valkey} logs analysis_scripts/{user_scripts,validation_results}
+      - echo -e "{{.GREEN}}✓ Directories created{{.NC}}"
+
+  env-setup:
+    desc: Setup environment file
+    cmds:
+      - |
+        if [ ! -f .env ]; then
+          echo -e "{{.YELLOW}}Creating .env from template...{{.NC}}"
+          cp .env.example .env
+          echo -e "{{.GREEN}}✓ Environment file created{{.NC}}"
+          echo -e "{{.YELLOW}}⚠ Please edit .env with your API keys{{.NC}}"
+        else
+          echo -e "{{.GREEN}}✓ Environment file exists{{.NC}}"
+        fi
+
+  install:
+    desc: One-click installation
+    deps: [dirs, env-setup]
+    cmds:
+      - echo -e "{{.BLUE}}╔════════════════════════════════════════════╗{{.NC}}"
+      - echo -e "{{.BLUE}}║     Installing Crawl4AI MCP Server        ║{{.NC}}"
+      - echo -e "{{.BLUE}}╚════════════════════════════════════════════╝{{.NC}}"
+      - echo ""
+      - echo -e "{{.GREEN}}Checking Docker...{{.NC}}"
+      - docker --version || (echo -e "{{.RED}}✗ Docker not installed{{.NC}}" && exit 1)
+      - docker compose version || (echo -e "{{.RED}}✗ Docker Compose not installed{{.NC}}" && exit 1)
+      - echo -e "{{.GREEN}}✓ Docker ready{{.NC}}"
+      - echo ""
+      - echo -e "{{.GREEN}}Pulling images...{{.NC}}"
+      - docker compose pull
+      - echo ""
+      - echo -e "{{.GREEN}}✅ Installation complete!{{.NC}}"
+      - echo ""
+      - echo -e "{{.YELLOW}}Next steps:{{.NC}}"
+      - echo "  1. Edit .env file with your API keys"
+      - echo "  2. Run 'task start' to start services"
+
+  quickstart:
+    desc: Complete setup and start
+    deps: [install]
+    cmds:
+      - task: start
+
+  # ============================================
+  # Service Management
+  # ============================================
+  start:
+    desc: Start core services
+    cmds:
+      - echo -e "{{.GREEN}}Starting services...{{.NC}}"
+      - docker compose --profile core up -d
+      - echo -e "{{.GREEN}}Waiting for services to be ready...{{.NC}}"
+      - sleep 5
+      - task: health
+      - echo ""
+      - echo -e "{{.GREEN}}🚀 Services running at:{{.NC}}"
+      - echo "  • MCP Server: http://localhost:8051"
+      - echo "  • Qdrant Dashboard: http://localhost:6333/dashboard"
+
+  stop:
+    desc: Stop all services
+    cmds:
+      - echo -e "{{.YELLOW}}Stopping services...{{.NC}}"
+      - docker compose down
+      - echo -e "{{.GREEN}}✓ Services stopped{{.NC}}"
+
+  restart:
+    desc: Restart services
+    cmds:
+      - task: stop
+      - task: start
+
+  logs:
+    desc: View service logs
+    cmds:
+      - docker compose logs -f --tail=100
+
+  health:
+    desc: Check service health
+    cmds:
+      - echo -e "{{.GREEN}}Checking service health...{{.NC}}"
+      - docker compose ps --format "table {{.Name}}\t{{.Status}}"
+
+  status:
+    desc: Alias for health
+    cmds:
+      - task: health
+
+  # ============================================
+  # Development Environment
+  # ============================================
+  dev:
+    desc: Start development environment
+    cmds:
+      - echo -e "{{.GREEN}}Starting development environment...{{.NC}}"
+      - docker compose --profile full up --watch
+
+  dev-bg:
+    desc: Start development in background
+    cmds:
+      - echo -e "{{.GREEN}}Starting development in background...{{.NC}}"
+      - docker compose --profile full up -d
+
+  # ============================================
+  # Testing
+  # ============================================
+  test:
+    desc: Run tests
+    cmds:
+      - echo -e "{{.GREEN}}Running tests...{{.NC}}"
+      - docker compose run --rm mcp-crawl4ai uv run pytest --cov=src
+
+  test-unit:
+    desc: Run unit tests
+    cmds:
+      - echo -e "{{.GREEN}}Running unit tests...{{.NC}}"
+      - docker compose run --rm mcp-crawl4ai uv run pytest tests/unit -v
+
+  test-coverage:
+    desc: Run tests with coverage
+    cmds:
+      - echo -e "{{.GREEN}}Running tests with coverage...{{.NC}}"
+      - docker compose run --rm mcp-crawl4ai uv run pytest --cov=src --cov-fail-under=80
+
+  # ============================================
+  # Docker Build & Release
+  # ============================================
+  build:
+    desc: Build Docker image
+    cmds:
+      - echo -e "{{.GREEN}}Building {{.IMAGE}}:{{.VERSION}}...{{.NC}}"
+      - docker buildx create --use --name multiarch || true
+      - |
+        docker buildx build \
+          --platform linux/amd64,linux/arm64 \
+          --tag {{.IMAGE}}:{{.VERSION}} \
+          --tag {{.IMAGE}}:latest \
+          --cache-from type=registry,ref={{.IMAGE}}:buildcache \
+          --cache-to type=registry,ref={{.IMAGE}}:buildcache,mode=max \
+          --load .
+      - echo -e "{{.GREEN}}✓ Build complete{{.NC}}"
+
+  push:
+    desc: Push to Docker Hub
+    cmds:
+      - echo -e "{{.GREEN}}Pushing {{.IMAGE}}:{{.VERSION}}...{{.NC}}"
+      - docker push {{.IMAGE}}:{{.VERSION}}
+      - docker push {{.IMAGE}}:latest
+      - echo -e "{{.GREEN}}✓ Push complete{{.NC}}"
+
+  security:
+    desc: Security scan
+    cmds:
+      - echo -e "{{.GREEN}}Running security scan...{{.NC}}"
+      - docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image --severity HIGH,CRITICAL {{.IMAGE}}:{{.VERSION}}
+
+  release:
+    desc: Full release process
+    deps: [test, security, build]
+    cmds:
+      - task: push
+      - echo -e "{{.GREEN}}✅ Release {{.VERSION}} complete!{{.NC}}"
+      - echo -e "{{.YELLOW}}Don't forget to:{{.NC}}"
+      - echo "  1. Create GitHub release"
+      - echo "  2. Update changelog"
+      - echo "  3. Tag the commit"
+
+  # ============================================
+  # Development Helpers
+  # ============================================
+  shell:
+    desc: Open shell in container
+    cmds:
+      - docker compose exec mcp-crawl4ai /bin/bash || docker compose run --rm mcp-crawl4ai /bin/bash
+
+  python:
+    desc: Open Python REPL
+    cmds:
+      - docker compose exec mcp-crawl4ai python || docker compose run --rm mcp-crawl4ai python
+
+  lint:
+    desc: Run code linting
+    cmds:
+      - echo -e "{{.GREEN}}Running linting...{{.NC}}"
+      - docker compose run --rm mcp-crawl4ai uv run ruff check src/ tests/
+
+  format:
+    desc: Format code
+    cmds:
+      - echo -e "{{.GREEN}}Formatting code...{{.NC}}"
+      - docker compose run --rm mcp-crawl4ai uv run ruff format src/ tests/
+
+  # ============================================
+  # Cleanup
+  # ============================================
+  clean:
+    desc: Clean test artifacts and caches
+    cmds:
+      - echo -e "{{.YELLOW}}Cleaning test artifacts and caches...{{.NC}}"
+      - find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+      - find . -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true
+      - find . -type d -name ".ruff_cache" -exec rm -rf {} + 2>/dev/null || true
+      - find . -type f -name "*.pyc" -delete 2>/dev/null || true
+      - find . -type f -name ".coverage" -delete 2>/dev/null || true
+      - rm -rf htmlcov coverage.xml .coverage.* 2>/dev/null || true
+      - echo -e "{{.GREEN}}✓ Cleanup complete{{.NC}}"
+
+  clean-all:
+    desc: Clean everything including volumes
+    cmds:
+      - task: stop
+      - task: clean
+      - |
+        echo -e "{{.RED}}⚠ WARNING: This will delete all data!{{.NC}}"
+        read -p "Are you sure? (y/N) " -n 1 -r
+        echo ""
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+          docker compose down -v
+          rm -rf data logs
+          echo -e "{{.GREEN}}✓ Full cleanup complete{{.NC}}"
+        else
+          echo -e "{{.YELLOW}}Cancelled{{.NC}}"
+        fi

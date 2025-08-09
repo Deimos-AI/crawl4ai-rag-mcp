@@ -2,6 +2,117 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2025-08-09] - Docker Compose Improvements and Best Practices
+
+### Updated
+
+- **Docker Compose Configuration**:
+  - Added explicit `name` field for project naming (crawl4ai-mcp)
+  - Added documentation noting that `version` field is intentionally omitted per modern Docker Compose standards
+  - Updated Qdrant to v1.15.1 (latest stable release as of July 24, 2024)
+  - Pinned Jupyter image to specific version (2024-07-29) instead of using `latest` tag
+  - Added logging configuration to all services with rotation (10MB max, 3 files)
+  - Added `restart: "no"` for development tools (Mailhog, Jupyter)
+  - Improved comments and documentation throughout the file
+
+### Improved
+
+- **Production Readiness**:
+  - Proper log management with json-file driver and rotation settings
+  - Fixed image versioning for reproducible builds
+  - Better restart policies for different service types
+  - Clear documentation about Docker Compose version field deprecation
+
+## [2025-08-09] - Deployment Preparation and Production-Ready Infrastructure
+
+### Added
+
+- **Production-Ready Docker Setup**:
+  - Multi-stage Dockerfile with BuildKit optimization (56% size reduction target)
+  - Security scanning stage with Trivy
+  - Non-root user execution for security
+  - Health checks for container orchestration
+  - Distroless base option for minimal attack surface
+
+- **Enhanced Makefile with 2025 Best Practices**:
+  - `.PHONY` targets for all non-file rules
+  - `.DELETE_ON_ERROR` for cleanup on failure
+  - Color-coded output for better UX
+  - Self-documenting help system
+  - One-click installation with `make install`
+  - Simplified commands: `make start`, `make stop`, `make logs`
+  - Docker build and release automation
+  - Full backward compatibility with existing commands
+
+- **Modern Task Runner Alternative**:
+  - Created Taskfile.yml as modern alternative to Make
+  - Supports same commands with cleaner syntax
+  - Better cross-platform compatibility
+
+- **Unified Docker Compose with Profiles**:
+  - Single docker-compose.yml replacing 3 separate files
+  - Profile-based deployment: `core`, `full`, `dev`
+  - Security configurations: non-root users, capability drops
+  - Resource limits and health checks
+  - Development tools: Mailhog, Jupyter (dev profile only)
+
+- **CI/CD Pipeline with GitHub Actions**:
+  - Automated testing with coverage requirements (80%)
+  - Security scanning with Trivy
+  - Multi-architecture builds (amd64, arm64)
+  - Docker Hub publishing
+  - SBOM generation for supply chain security
+  - Automatic release creation on tags
+
+- **One-Click Installation Script**:
+  - Automated dependency checking
+  - Repository setup and configuration
+  - Environment file creation
+  - Service startup with health checks
+  - Shell aliases for convenience commands
+
+- **Comprehensive Documentation**:
+  - QUICK_START.md - 3-step installation guide
+  - INSTALLATION.md - Detailed setup instructions
+  - CONFIGURATION.md - Complete configuration reference
+  - Clear examples and troubleshooting guides
+
+### Changed
+
+- **Repository Structure**:
+  - Moved test/debug files to `scripts/debug/`
+  - Archived old docker-compose files to `archives/`
+  - Organized Docker configs in `docker/` directory
+  - Created structured `docs/` directory
+
+- **Build Process**:
+  - Optimized layer caching with BuildKit
+  - Separated build and runtime dependencies
+  - Implemented multi-platform support
+  - Added security scanning to build pipeline
+
+### Improved
+
+- **Developer Experience**:
+  - Simplified commands with better defaults
+  - Color-coded output for clarity
+  - One-command installation and startup
+  - Automatic health checking
+  - Better error messages and guidance
+
+- **Security**:
+  - Rootless containers by default
+  - Minimal attack surface with distroless option
+  - Automated vulnerability scanning
+  - Security-focused Docker configurations
+  - No-new-privileges security option
+
+- **Performance**:
+  - Target 56% Docker image size reduction
+  - BuildKit cache optimization
+  - Resource limits and reservations
+  - Optimized service dependencies
+
 ## [2025-08-08] - Fixed Module Import SyntaxError
 
 ### Fixed

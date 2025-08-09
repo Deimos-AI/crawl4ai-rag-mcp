@@ -1,54 +1,56 @@
-# Qdrant configuration for optimized performance
-# This configuration is optimized for the MCP Crawl4AI use case
-
+# Qdrant Configuration for Crawl4AI MCP Server
 service:
+  # API configuration
   http_port: 6333
   grpc_port: 6334
-  # Enable CORS for web UI access
-  enable_cors: true
-
+  
+  # Performance settings
+  max_request_size_mb: 32
+  max_workers: 0  # Auto-detect optimal worker count
+  
+  # Enable web UI
+  enable_static_content: true
+  
 storage:
-  # Storage path inside container
+  # Storage configuration
   storage_path: /qdrant/storage
   
   # Performance optimizations
-  performance:
-    # Number of parallel workers for indexing
-    indexing_threads: 0  # 0 = auto (number of CPU cores)
+  on_disk_payload: true
+  
+  # WAL configuration
+  wal:
+    wal_capacity_mb: 32
+    wal_segments_ahead: 0
     
-    # Thresholds for switching between in-memory and on-disk storage
-    indexing_threshold: 20000
+  # Optimizers
+  optimizers:
+    deleted_threshold: 0.2
+    vacuum_min_vector_number: 1000
+    default_segment_number: 0
+    max_segment_size: 200000
     memmap_threshold: 50000
-    payload_indexing_threshold: 10000
+    indexing_ram: 256
+    flush_interval_sec: 5
+    max_optimization_threads: 1
     
-    # Optimize for better search performance
-    search_optimizations:
-      # Enable HNSW index optimization
-      indexing_threshold_kb: 50000
-      
-    # WAL settings for durability vs performance trade-off
-    wal:
-      wal_capacity_mb: 32
-      wal_segments_ahead: 0
+  # HNSW Index configuration  
+  hnsw_index:
+    m: 16
+    ef_construct: 100
+    full_scan_threshold: 10000
+    max_indexing_threads: 0
+    on_disk: false
+    payload_m: null
+    
+  # Quantization
+  quantization:
+    always_ram: false
 
-# Collection defaults for crawled pages
-collection_defaults:
-  # Vector parameters optimized for OpenAI embeddings
-  vectors:
-    size: 1536  # OpenAI ada-002 embedding size
-    distance: Cosine  # Best for normalized embeddings
-    
-  # Optimized HNSW parameters
-  hnsw_config:
-    m: 16  # Number of bi-directional links
-    ef_construct: 100  # Size of dynamic candidate list
-    
-  # Quantization for memory efficiency (optional)
-  quantization_config:
-    scalar:
-      type: int8
-      quantile: 0.99
-      always_ram: true
+# Cluster configuration (disabled for single node)
+cluster:
+  enabled: false
 
-# Logging configuration
-log_level: info
+# Telemetry
+telemetry:
+  telemetry_disabled: true
